@@ -7,16 +7,24 @@ on:
 
 permissions:
   contents: write
-  issues: read
+  issues: write
 
 jobs:
   reconstruct:
     if: >-
       github.event.issue.number == 7 &&
-      github.event.comment.body == 'RUN_DBLYATEM_IMPORT_BOOTSTRAP'
+      github.event.comment.body == 'RUN_DBLYATEM_IMPORT_BOOTSTRAP_V2'
     runs-on: ubuntu-latest
 
     steps:
+      - name: Report bootstrap start
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 7 \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "DBLYATEM_IMPORT_BOOTSTRAP_STARTED ${GITHUB_RUN_ID}"
+
       - name: Check out feature branch
         uses: actions/checkout@v4
         with:
@@ -106,3 +114,21 @@ jobs:
           git diff --cached --check
           git commit -m "add bounded import directory planner"
           git push origin HEAD:deadbyte/import-directory-planner
+
+      - name: Report bootstrap success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 7 \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "DBLYATEM_IMPORT_BOOTSTRAP_PASS ${GITHUB_RUN_ID}"
+
+      - name: Report bootstrap failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 7 \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "DBLYATEM_IMPORT_BOOTSTRAP_FAIL ${GITHUB_RUN_ID}"
