@@ -23,9 +23,13 @@ $(BUILD)/pe_test: tests/pe_test.c src/pe.c include/dblyat/pe.h | $(BUILD)
 $(BUILD)/map_test: tests/map_test.c $(CORE) $(HEADERS) | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/map_test.c $(CORE) -o $@
 
-test: $(BUILD)/pe_test $(BUILD)/map_test
+$(BUILD)/pe_structs_test: tests/pe_structs_test.c include/dblyat/pe_structs.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/pe_structs_test.c -o $@
+
+test: $(BUILD)/pe_test $(BUILD)/map_test $(BUILD)/pe_structs_test
 	./$(BUILD)/pe_test
 	./$(BUILD)/map_test
+	./$(BUILD)/pe_structs_test
 
 clean:
 	rm -rf $(BUILD)
