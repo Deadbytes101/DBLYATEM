@@ -4,8 +4,8 @@ CFLAGS := -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
           -Wshadow -Wstrict-prototypes -Wmissing-prototypes
 
 BUILD := build
-CORE := src/pe.c src/map.c
-HEADERS := include/dblyat/pe.h include/dblyat/map.h
+CORE := src/pe.c src/map.c src/reloc.c
+HEADERS := include/dblyat/pe.h include/dblyat/map.h include/dblyat/reloc.h
 
 .PHONY: all test clean
 
@@ -20,15 +20,21 @@ $(BUILD)/dblyatem: main.c $(CORE) $(HEADERS) | $(BUILD)
 $(BUILD)/pe_test: tests/pe_test.c src/pe.c include/dblyat/pe.h | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/pe_test.c src/pe.c -o $@
 
-$(BUILD)/map_test: tests/map_test.c $(CORE) $(HEADERS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) tests/map_test.c $(CORE) -o $@
+$(BUILD)/map_test: tests/map_test.c src/pe.c src/map.c \
+                   include/dblyat/pe.h include/dblyat/map.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/map_test.c src/pe.c src/map.c -o $@
+
+$(BUILD)/reloc_test: tests/reloc_test.c $(CORE) $(HEADERS) | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/reloc_test.c $(CORE) -o $@
 
 $(BUILD)/pe_structs_test: tests/pe_structs_test.c include/dblyat/pe_structs.h | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/pe_structs_test.c -o $@
 
-test: $(BUILD)/pe_test $(BUILD)/map_test $(BUILD)/pe_structs_test
+test: $(BUILD)/pe_test $(BUILD)/map_test $(BUILD)/reloc_test \
+      $(BUILD)/pe_structs_test
 	./$(BUILD)/pe_test
 	./$(BUILD)/map_test
+	./$(BUILD)/reloc_test
 	./$(BUILD)/pe_structs_test
 
 clean:
