@@ -1,33 +1,23 @@
 name: Bootstrap verified runtime snapshot
 
 on:
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
   issues: read
-  pull-requests: read
-
-concurrency:
-  group: dblyatem-bootstrap-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
 
 jobs:
   bootstrap:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out bootstrap branch
+      - name: Check out canonical main
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: main
           fetch-depth: 0
 
       - name: Reconstruct verified snapshot
@@ -78,6 +68,7 @@ jobs:
           cp -a "$unpack"/. .
           cp "$work/README.TXT" README.TXT
           rm -f .github/workflows/bootstrap.yml
+          rm -f BOOTSTRAP.TXT
 
       - name: Verify strict build and tests
         shell: bash
@@ -87,10 +78,8 @@ jobs:
           make test
           make
 
-      - name: Commit verified snapshot to bootstrap branch
+      - name: Commit verified snapshot to canonical main
         shell: bash
-        env:
-          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
 
@@ -99,11 +88,5 @@ jobs:
 
           git add -A
           git diff --cached --check
-
-          if git diff --cached --quiet; then
-            echo "verified snapshot already present"
-            exit 0
-          fi
-
           git commit -m "restore verified runtime snapshot"
-          git push origin "HEAD:${HEAD_BRANCH}"
+          git push origin HEAD:main
