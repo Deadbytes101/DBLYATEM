@@ -1,0 +1,108 @@
+name: Import planner bootstrap control
+
+on:
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: write
+  issues: read
+
+jobs:
+  reconstruct:
+    if: >-
+      github.event.issue.number == 7 &&
+      github.event.comment.body == 'RUN_DBLYATEM_IMPORT_BOOTSTRAP'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: deadbyte/import-directory-planner
+          fetch-depth: 0
+
+      - name: Reconstruct verified source archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE_SHA256: ae722f40e99dda659e348d51a00d201377b38852b36efa5ef595a67050299633
+        run: |
+          set -euo pipefail
+
+          work="$(mktemp -d)"
+          rows="$work/chunks.tsv"
+          archive="$work/DBLYATEM-IMPORT-PLANNER.tar.xz"
+          unpack="$work/unpack"
+
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/issues/7/comments" |
+            jq -r '
+              .[]
+              | select(.body | startswith("DBLYATEM_IMPORT_ARCHIVE_"))
+              | [
+                  (.body | split("\n")[0]),
+                  (.body | split("\n")[1:] | join(""))
+                ]
+              | @tsv
+            ' > "$rows"
+
+          test "$(wc -l < "$rows")" -eq 2
+          cut -f1 "$rows" | sort -u | diff -u - <(
+            printf '%s\n' \
+              DBLYATEM_IMPORT_ARCHIVE_00 \
+              DBLYATEM_IMPORT_ARCHIVE_01
+          )
+
+          sort -k1,1 "$rows" |
+            cut -f2- |
+            tr -d '\n' |
+            base64 --decode > "$archive"
+
+          test "$(sha256sum "$archive" | awk '{print $1}')" = "$ARCHIVE_SHA256"
+
+          tar -tJf "$archive" | sort | diff -u - <(
+            printf '%s\n' \
+              Makefile \
+              include/dblyat/import.h \
+              src/import.c \
+              tests/import_test.c |
+              sort
+          )
+
+          mkdir -p "$unpack"
+          tar -xJf "$archive" -C "$unpack"
+          cp -a "$unpack"/. .
+
+          test "$(sha256sum Makefile | awk '{print $1}')" = \
+            135502dc89b89ce9d8f5931c5050d389049385f7f28d84fcd71393b1a8ef1112
+          test "$(sha256sum include/dblyat/import.h | awk '{print $1}')" = \
+            3f263cdb83345590cba711337461de0db8d972464462b9ef6fa42a44a3892bf2
+          test "$(sha256sum src/import.c | awk '{print $1}')" = \
+            255a68e44ae4049cbfa10ae3e6bc16cff72d8d25cd1fc66295b8969809b178a6
+          test "$(sha256sum tests/import_test.c | awk '{print $1}')" = \
+            a27c1ab0d2ebc54e40c17265d506ca6283ad1ea5074bfdd156bafdfd6382822d
+
+          rm -f .github/workflows/import-bootstrap.yml
+
+      - name: Run strict build and tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make clean
+          make test
+          make
+
+      - name: Commit bounded import planner
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git diff --cached --check
+          git commit -m "add bounded import directory planner"
+          git push origin HEAD:deadbyte/import-directory-planner
