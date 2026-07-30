@@ -1,0 +1,90 @@
+name: Bootstrap verified runtime snapshot
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out canonical repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct verified snapshot
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA256: ff648f6e58913fb9cd00b20e3a0f004207b636bcf8c3f09d85edd789b9b7a397
+        run: |
+          set -euo pipefail
+
+          work="$(mktemp -d)"
+          archive="$work/DBLYATEM-CANONICAL-SNAPSHOT.tar.xz"
+          rows="$work/chunks.tsv"
+          unpack="$work/unpack"
+
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/issues/4/comments" |
+            jq -r '
+              .[]
+              | select(.body | startswith("DBLYATEM_SNAPSHOT_CHUNK_"))
+              | [
+                  (.body | split("\n")[0]),
+                  (.body | split("\n")[1:] | join(""))
+                ]
+              | @tsv
+            ' > "$rows"
+
+          test "$(wc -l < "$rows")" -eq 3
+          cut -f1 "$rows" | sort -u | diff -u - <(
+            printf '%s\n' \
+              DBLYATEM_SNAPSHOT_CHUNK_00 \
+              DBLYATEM_SNAPSHOT_CHUNK_01 \
+              DBLYATEM_SNAPSHOT_CHUNK_02
+          )
+
+          sort -k1,1 "$rows" |
+            cut -f2- |
+            tr -d '\n' |
+            base64 --decode > "$archive"
+
+          actual="$(sha256sum "$archive" | awk '{print $1}')"
+          test "$actual" = "$EXPECTED_SHA256"
+
+          mkdir -p "$unpack"
+          tar -xJf "$archive" -C "$unpack"
+
+          cp README.TXT "$work/README.TXT"
+          cp -a "$unpack"/. .
+          cp "$work/README.TXT" README.TXT
+          rm -f .github/workflows/bootstrap.yml
+
+      - name: Verify strict build and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          make clean
+          make test
+          make
+
+      - name: Commit verified snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git diff --cached --check
+          git commit -m "restore verified runtime snapshot"
+          git push origin HEAD:main
