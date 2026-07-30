@@ -1,0 +1,6 @@
+DBLYATEM VERIFIED SNAPSHOT RESTORE
+==================================
+
+This marker exists only to trigger the reviewed bootstrap workflow.
+The workflow replaces it with the content-verified runtime snapshot,
+runs the strict test suite, and removes this marker before merge.
