@@ -1,3 +1,81 @@
+#define _POSIX_C_SOURCE 200809L
+
+#include "dblyat/pe.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static size_t db_cstr_length(const char *text)
+{
+    size_t length = 0u;
+
+    while (text[length] != '\0') {
+        ++length;
+    }
+
+    return length;
+}
+
+static void db_write_all(int fd, const char *text, size_t length)
+{
+    while (length != 0u) {
+        const ssize_t written = write(fd, text, length);
+
+        if (written > 0) {
+            text += (size_t)written;
+            length -= (size_t)written;
+            continue;
+        }
+
+        if (written < 0 && errno == EINTR) {
+            continue;
+        }
+
+        break;
+    }
+}
+
+static void db_puts_fd(int fd, const char *text)
+{
+    db_write_all(fd, text, db_cstr_length(text));
+}
+
+static void db_put_u64_hex(int fd, uint64_t value)
+{
+    static const char digits[] = "0123456789abcdef";
+    char buffer[18];
+    size_t index;
+
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    for (index = 0u; index < 16u; ++index) {
+        const unsigned shift = (unsigned)((15u - index) * 4u);
+        buffer[index + 2u] = digits[(value >> shift) & 0x0fu];
+    }
+
+    db_write_all(fd, buffer, sizeof(buffer));
+}
+
+static void db_put_u32_dec(int fd, uint32_t value)
+{
+    char buffer[10];
+    size_t used = 0u;
+
+    do {
+        buffer[used++] = (char)('0' + (value % 10u));
+        value /= 10u;
+    } while (value != 0u);
+
+    while (used != 0u) {
+        --used;
+        db_write_all(fd, &buffer[used], 1u);
+    }
+}
+
 static int db_verify_file(const char *path)
 {
     struct stat metadata;
@@ -66,4 +144,3 @@ int main(int argc, char **argv)
 
     return db_verify_file(argv[2]);
 }
-//GODSAYS: FUCKYOUTOO
