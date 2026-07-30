@@ -1,0 +1,45 @@
+name: Strict C CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  strict-build:
+    name: ${{ matrix.compiler }} strict build
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: GCC
+            cc: gcc
+          - compiler: Clang
+            cc: clang
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc clang make
+
+      - name: Run strict tests
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -eux
+          make clean
+          make test
+          make
+
+      - name: Require clean worktree
+        run: git diff --exit-code --check
