@@ -11,6 +11,5 @@ typedef struct image_dos_header {
   uint16_t e_csum;
   uint16_t e_ip;
   uint16_t e_cs;
-  uint32_t e_lfanew;
-  
-} image_dos_header;
+  uint32_t e_lfanew;  
+} __attribute__((packed)) image_dos_header;
