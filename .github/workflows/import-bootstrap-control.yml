@@ -4,6 +4,9 @@ on:
   issue_comment:
     types:
       - created
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -12,8 +15,12 @@ permissions:
 jobs:
   reconstruct:
     if: >-
-      github.event.issue.number == 7 &&
-      github.event.comment.body == 'RUN_DBLYATEM_IMPORT_BOOTSTRAP_V2'
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.number == 7 &&
+       github.event.comment.body == 'RUN_DBLYATEM_IMPORT_BOOTSTRAP_V2') ||
+      (github.event_name == 'push' &&
+       contains(github.event.head_commit.message,
+                'RUN_DBLYATEM_IMPORT_BOOTSTRAP'))
     runs-on: ubuntu-latest
 
     steps:
