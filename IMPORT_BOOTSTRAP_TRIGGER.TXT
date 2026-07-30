@@ -1,0 +1,6 @@
+DBLYATEM IMPORT BOOTSTRAP TRIGGER
+=================================
+
+This marker exists only to produce one reviewed push event on canonical
+main. The bootstrap control workflow reconstructs, verifies, builds, and
+tests the bounded import-directory planner on its feature branch.
