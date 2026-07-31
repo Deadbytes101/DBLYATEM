@@ -25,6 +25,16 @@ clang $common tests/x64_interpret_test.c src/x64_interpret.c \
     -o "$build/clang-interpret-test"
 "$build/clang-interpret-test"
 
+gcc $common tests/x64_execute_test.c src/x64_execute.c \
+    src/x64_decode.c src/x64_interpret.c \
+    -o "$build/gcc-execute-test"
+"$build/gcc-execute-test"
+
+clang $common tests/x64_execute_test.c src/x64_execute.c \
+    src/x64_decode.c src/x64_interpret.c \
+    -o "$build/clang-execute-test"
+"$build/clang-execute-test"
+
 gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     tests/x64_decode_test.c src/x64_decode.c \
@@ -37,8 +47,17 @@ gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -o "$build/interpret-sanitizer-test"
 "$build/interpret-sanitizer-test"
 
+gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+    -fsanitize=address,undefined -fno-omit-frame-pointer \
+    tests/x64_execute_test.c src/x64_execute.c \
+    src/x64_decode.c src/x64_interpret.c \
+    -o "$build/execute-sanitizer-test"
+"$build/execute-sanitizer-test"
+
 clang --analyze -Iinclude -std=c11 -Wall -Wextra -Wpedantic -Werror \
     src/x64_decode.c tests/x64_decode_test.c \
-    src/x64_interpret.c tests/x64_interpret_test.c
+    src/x64_interpret.c tests/x64_interpret_test.c \
+    src/x64_execute.c tests/x64_execute_test.c
 
 printf '%s\n' 'X64 DECODE + INTERPRET VERIFY: PASS'
+printf '%s\n' 'X64 DECODE + INTERPRET + EXECUTE VERIFY: PASS'
