@@ -16,12 +16,19 @@ for verifier in \
     tools/verify-win32-provider.sh \
     tools/verify-win32-kernel32.sh \
     tools/verify-win32-kernel32-invoke.sh \
-    tools/verify-win32-kernel32-gateway.sh
+    tools/verify-win32-kernel32-gateway.sh \
+    tools/verify-x64-decode.sh
 do
     grep -Fx "STANDALONE=$verifier" "$output" >/dev/null
 done
 
-sed '/STANDALONE=tools\/verify-win32-kernel32-gateway.sh/d' \
+if grep -Fx 'STANDALONE=tools/verify-all.sh' "$output" >/dev/null
+then
+    printf '%s\n' 'VERIFY ALL CONTRACT TEST: recursive verifier accepted' >&2
+    exit 1
+fi
+
+sed '/STANDALONE=tools\/verify-x64-decode.sh/d' \
     "$root/tools/verify-manifest.txt" > "$temporary/missing.txt"
 if DB_VERIFY_MANIFEST="$temporary/missing.txt" \
     "$root/tools/verify-all.sh" --contract >/dev/null 2>&1
@@ -30,8 +37,17 @@ then
     exit 1
 fi
 
+cat "$root/tools/verify-manifest.txt" > "$temporary/extra.txt"
+printf '%s\n' 'STANDALONE=tools/verify-all.sh' >> "$temporary/extra.txt"
+if DB_VERIFY_MANIFEST="$temporary/extra.txt" \
+    "$root/tools/verify-all.sh" --contract >/dev/null 2>&1
+then
+    printf '%s\n' 'VERIFY ALL CONTRACT TEST: extra verifier accepted' >&2
+    exit 1
+fi
+
 cat "$root/tools/verify-manifest.txt" > "$temporary/duplicate.txt"
-printf '%s\n' 'STANDALONE=tools/verify-win32-provider.sh' >> \
+printf '%s\n' 'STANDALONE=tools/verify-x64-decode.sh' >> \
     "$temporary/duplicate.txt"
 if DB_VERIFY_MANIFEST="$temporary/duplicate.txt" \
     "$root/tools/verify-all.sh" --contract >/dev/null 2>&1

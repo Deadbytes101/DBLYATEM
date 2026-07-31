@@ -18,11 +18,17 @@ GCC, and Clang. It performs:
     CONTRACT VALIDATION
     CLEAN STRICT GCC FULL-TREE BUILD AND TEST
     CLEAN STRICT CLANG FULL-TREE BUILD AND TEST
-    EVERY tools/verify-win32-*.sh STANDALONE VERIFIER
+    EVERY REGISTERED tools/verify-*.sh STANDALONE VERIFIER
 
-The standalone set is checked against tools/verify-manifest.txt before any
-compiler is run. A missing, unlisted, duplicate, or non-executable verifier is
-a hard failure.
+`tools/verify-all.sh` itself is excluded from standalone discovery so the
+verifier cannot recursively execute itself. All other tools/verify-*.sh files
+are discovered in stable C-locale byte order and checked against
+`tools/verify-manifest.txt` before any compiler is run. A missing, extra,
+duplicate, or non-executable verifier is a hard failure.
+
+The registered architecture verification surface includes:
+
+    tools/verify-x64-decode.sh
 
 EVIDENCE
 --------
