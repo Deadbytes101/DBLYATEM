@@ -26,7 +26,6 @@ manifest_output="$evidence/manifest.txt"
 finalized=0
 failed_step=setup
 
-
 fail()
 {
     printf 'VERIFY ALL: FAIL: %s\n' "$1" >&2
@@ -108,24 +107,29 @@ validate_manifest()
     [ -f "$root/$full_tree" ] || fail "missing full-tree makefile: $full_tree"
     [ -s "$scratch/standalone.manifest" ] || fail 'no standalone verifiers listed'
 
-    duplicate=$(sort "$scratch/standalone.manifest" | uniq -d | sed -n '1p')
+    duplicate=$(LC_ALL=C sort "$scratch/standalone.manifest" | uniq -d | sed -n '1p')
     [ -z "$duplicate" ] || fail "duplicate standalone verifier: $duplicate"
 
-    : > "$scratch/standalone.discovered"
-    for path in "$root"/tools/verify-win32-*.sh; do
+    : > "$scratch/standalone.discovered.unsorted"
+    for path in "$root"/tools/verify-*.sh; do
         [ -f "$path" ] || continue
-        printf 'tools/%s\n' "$(basename -- "$path")" >> \
-            "$scratch/standalone.discovered"
+        filename=$(basename -- "$path")
+        [ "$filename" = 'verify-all.sh' ] && continue
+        printf 'tools/%s\n' "$filename" >> \
+            "$scratch/standalone.discovered.unsorted"
     done
 
-    [ -s "$scratch/standalone.discovered" ] ||
-        fail 'no standalone Win32 verifier discovered'
+    LC_ALL=C sort "$scratch/standalone.discovered.unsorted" > \
+        "$scratch/standalone.discovered"
 
-    sort "$scratch/standalone.manifest" > "$scratch/standalone.manifest.sorted"
-    sort "$scratch/standalone.discovered" > "$scratch/standalone.discovered.sorted"
+    [ -s "$scratch/standalone.discovered" ] ||
+        fail 'no standalone verifier discovered'
+
+    LC_ALL=C sort "$scratch/standalone.manifest" > \
+        "$scratch/standalone.manifest.sorted"
     cmp -s "$scratch/standalone.manifest.sorted" \
-           "$scratch/standalone.discovered.sorted" ||
-        fail 'manifest standalone set does not match tools/verify-win32-*.sh'
+           "$scratch/standalone.discovered" ||
+        fail 'manifest standalone set does not match tools/verify-*.sh excluding verify-all.sh'
 
     while IFS= read -r verifier; do
         [ -f "$root/$verifier" ] || fail "missing verifier: $verifier"
