@@ -5,12 +5,12 @@ CFLAGS := -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
 
 BUILD := build
 CORE := src/pe.c src/map.c src/reloc.c src/reloc_apply.c src/import.c src/bind.c \
-        src/iat_plan.c src/iat_apply.c src/gateway_plan.c src/gateway_emit.c
+        src/iat_plan.c src/iat_apply.c src/gateway_plan.c src/gateway_emit.c src/gateway_decode.c
 HEADERS := include/dblyat/pe.h include/dblyat/map.h include/dblyat/reloc.h \
            include/dblyat/reloc_apply.h include/dblyat/import.h \
            include/dblyat/bind.h include/dblyat/iat_plan.h \
            include/dblyat/iat_apply.h include/dblyat/gateway_plan.h \
-           include/dblyat/gateway_emit.h
+           include/dblyat/gateway_emit.h include/dblyat/gateway_decode.h
 
 .PHONY: all test clean
 
@@ -84,6 +84,16 @@ $(BUILD)/gateway_emit_test: tests/gateway_emit_test.c src/gateway_emit.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/gateway_emit_test.c \
 		src/gateway_emit.c -o $@
 
+$(BUILD)/gateway_decode_test: tests/gateway_decode_test.c src/gateway_decode.c \
+                              include/dblyat/gateway_decode.h \
+                              include/dblyat/gateway_emit.h \
+                              include/dblyat/gateway_plan.h \
+                              include/dblyat/iat_plan.h include/dblyat/bind.h \
+                              include/dblyat/import.h include/dblyat/map.h \
+                              include/dblyat/pe.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/gateway_decode_test.c \
+		src/gateway_decode.c -o $@
+
 $(BUILD)/pe_structs_test: tests/pe_structs_test.c include/dblyat/pe_structs.h | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/pe_structs_test.c -o $@
 
@@ -91,7 +101,7 @@ test: $(BUILD)/pe_test $(BUILD)/map_test $(BUILD)/reloc_test \
       $(BUILD)/reloc_apply_test $(BUILD)/import_test $(BUILD)/bind_test \
       $(BUILD)/iat_plan_test $(BUILD)/iat_apply_test \
       $(BUILD)/gateway_plan_test $(BUILD)/gateway_emit_test \
-      $(BUILD)/pe_structs_test
+      $(BUILD)/gateway_decode_test $(BUILD)/pe_structs_test
 	./$(BUILD)/pe_test
 	./$(BUILD)/map_test
 	./$(BUILD)/reloc_test
@@ -102,6 +112,7 @@ test: $(BUILD)/pe_test $(BUILD)/map_test $(BUILD)/reloc_test \
 	./$(BUILD)/iat_apply_test
 	./$(BUILD)/gateway_plan_test
 	./$(BUILD)/gateway_emit_test
+	./$(BUILD)/gateway_decode_test
 	./$(BUILD)/pe_structs_test
 
 clean:
