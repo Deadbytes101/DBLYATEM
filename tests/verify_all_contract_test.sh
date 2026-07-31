@@ -17,7 +17,8 @@ for verifier in \
     tools/verify-win32-kernel32.sh \
     tools/verify-win32-kernel32-invoke.sh \
     tools/verify-win32-kernel32-gateway.sh \
-    tools/verify-x64-decode.sh
+    tools/verify-x64-decode.sh \
+    tools/verify-x64-ir-boundary.sh
 do
     grep -Fx "STANDALONE=$verifier" "$output" >/dev/null
 done
