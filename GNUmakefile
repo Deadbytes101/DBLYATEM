@@ -179,3 +179,44 @@ gateway_executor_verify: $(BUILD)/gateway_executor_test
 	./$(BUILD)/gateway_executor_test
 
 test: gateway_executor_verify
+
+CORE += src/gateway_registry.c
+HEADERS += include/dblyat/gateway_registry.h
+
+$(BUILD)/dblyatem: src/gateway_registry.c \
+                   include/dblyat/gateway_registry.h
+
+$(BUILD)/gateway_registry_test: tests/gateway_registry_test.c \
+                                src/gateway_registry.c \
+                                src/gateway_executor.c \
+                                src/gateway_auth_complete.c \
+                                src/gateway_result.c \
+                                include/dblyat/gateway_registry.h \
+                                include/dblyat/gateway_executor.h \
+                                include/dblyat/gateway_auth_complete.h \
+                                include/dblyat/gateway_result.h \
+                                include/dblyat/gateway_invoke.h \
+                                include/dblyat/gateway_complete.h \
+                                include/dblyat/gateway_return_apply.h \
+                                include/dblyat/gateway_return.h \
+                                include/dblyat/gateway_frame.h \
+                                include/dblyat/gateway_enter.h \
+                                include/dblyat/gateway_dispatch.h \
+                                include/dblyat/gateway_lookup.h \
+                                include/dblyat/gateway_decode.h \
+                                include/dblyat/gateway_emit.h \
+                                include/dblyat/gateway_plan.h \
+                                include/dblyat/iat_plan.h \
+                                include/dblyat/bind.h \
+                                include/dblyat/import.h \
+                                include/dblyat/map.h \
+                                include/dblyat/pe.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/gateway_registry_test.c \
+		src/gateway_registry.c src/gateway_executor.c \
+		src/gateway_auth_complete.c src/gateway_result.c -o $@
+
+.PHONY: gateway_registry_verify
+gateway_registry_verify: $(BUILD)/gateway_registry_test
+	./$(BUILD)/gateway_registry_test
+
+test: gateway_registry_verify
