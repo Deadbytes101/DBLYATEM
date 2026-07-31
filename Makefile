@@ -4,9 +4,10 @@ CFLAGS := -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
           -Wshadow -Wstrict-prototypes -Wmissing-prototypes
 
 BUILD := build
-CORE := src/pe.c src/map.c src/reloc.c src/reloc_apply.c src/import.c
+CORE := src/pe.c src/map.c src/reloc.c src/reloc_apply.c src/import.c src/bind.c
 HEADERS := include/dblyat/pe.h include/dblyat/map.h include/dblyat/reloc.h \
-           include/dblyat/reloc_apply.h include/dblyat/import.h
+           include/dblyat/reloc_apply.h include/dblyat/import.h \
+           include/dblyat/bind.h
 
 .PHONY: all test clean
 
@@ -45,17 +46,23 @@ $(BUILD)/import_test: tests/import_test.c src/pe.c src/map.c src/import.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/import_test.c \
 		src/pe.c src/map.c src/import.c -o $@
 
+$(BUILD)/bind_test: tests/bind_test.c src/bind.c include/dblyat/bind.h \
+                    include/dblyat/import.h include/dblyat/map.h \
+                    include/dblyat/pe.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/bind_test.c src/bind.c -o $@
+
 $(BUILD)/pe_structs_test: tests/pe_structs_test.c include/dblyat/pe_structs.h | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/pe_structs_test.c -o $@
 
 test: $(BUILD)/pe_test $(BUILD)/map_test $(BUILD)/reloc_test \
-      $(BUILD)/reloc_apply_test $(BUILD)/import_test \
+      $(BUILD)/reloc_apply_test $(BUILD)/import_test $(BUILD)/bind_test \
       $(BUILD)/pe_structs_test
 	./$(BUILD)/pe_test
 	./$(BUILD)/map_test
 	./$(BUILD)/reloc_test
 	./$(BUILD)/reloc_apply_test
 	./$(BUILD)/import_test
+	./$(BUILD)/bind_test
 	./$(BUILD)/pe_structs_test
 
 clean:
