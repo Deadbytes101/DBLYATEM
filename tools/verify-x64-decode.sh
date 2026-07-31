@@ -61,6 +61,14 @@ clang $common tests/x64_memory_instruction_test.c \
     -o "$build/clang-memory-instruction-test"
 "$build/clang-memory-instruction-test"
 
+gcc $common tests/x64_memory_view_test.c src/x64_memory_view.c \
+    -o "$build/gcc-memory-view-test"
+"$build/gcc-memory-view-test"
+
+clang $common tests/x64_memory_view_test.c src/x64_memory_view.c \
+    -o "$build/clang-memory-view-test"
+"$build/clang-memory-view-test"
+
 gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     tests/x64_decode_test.c src/x64_decode.c \
@@ -99,17 +107,25 @@ gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -o "$build/memory-instruction-sanitizer-test"
 "$build/memory-instruction-sanitizer-test"
 
+gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+    -fsanitize=address,undefined -fno-omit-frame-pointer \
+    tests/x64_memory_view_test.c src/x64_memory_view.c \
+    -o "$build/memory-view-sanitizer-test"
+"$build/memory-view-sanitizer-test"
+
 clang --analyze -Iinclude -std=c11 -Wall -Wextra -Wpedantic -Werror \
     src/x64_decode.c tests/x64_decode_test.c \
     src/x64_interpret.c tests/x64_interpret_test.c \
     src/x64_execute.c tests/x64_execute_test.c \
     src/x64_address.c tests/x64_address_test.c \
     src/x64_memory_decode.c tests/x64_memory_decode_test.c \
-    src/x64_memory_instruction.c tests/x64_memory_instruction_test.c
+    src/x64_memory_instruction.c tests/x64_memory_instruction_test.c \
+    src/x64_memory_view.c tests/x64_memory_view_test.c
 
 printf '%s\n' 'X64 DECODE + INTERPRET VERIFY: PASS'
 printf '%s\n' 'X64 DECODE + INTERPRET + EXECUTE VERIFY: PASS'
 printf '%s\n' 'X64 ADDRESS VERIFY: PASS'
 printf '%s\n' 'X64 MEMORY DECODE VERIFY: PASS'
 printf '%s\n' 'X64 MEMORY INSTRUCTION VERIFY: PASS'
+printf '%s\n' 'X64 MEMORY VIEW VERIFY: PASS'
 printf '%s\n' 'X64 CORE VERIFY: PASS'
