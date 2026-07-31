@@ -91,6 +91,22 @@ clang $common tests/x64_stack_execute_test.c \
     -o "$build/clang-stack-execute-test"
 "$build/clang-stack-execute-test"
 
+gcc $common tests/x64_run_test.c \
+    src/x64_run.c src/x64_execute.c src/x64_decode.c \
+    src/x64_interpret.c src/x64_memory_execute.c \
+    src/x64_memory_instruction.c src/x64_memory_decode.c \
+    src/x64_address.c src/x64_memory_view.c src/x64_stack_execute.c \
+    -o "$build/gcc-run-test"
+"$build/gcc-run-test"
+
+clang $common tests/x64_run_test.c \
+    src/x64_run.c src/x64_execute.c src/x64_decode.c \
+    src/x64_interpret.c src/x64_memory_execute.c \
+    src/x64_memory_instruction.c src/x64_memory_decode.c \
+    src/x64_address.c src/x64_memory_view.c src/x64_stack_execute.c \
+    -o "$build/clang-run-test"
+"$build/clang-run-test"
+
 gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     tests/x64_decode_test.c src/x64_decode.c \
@@ -150,6 +166,16 @@ gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -o "$build/stack-execute-sanitizer-test"
 "$build/stack-execute-sanitizer-test"
 
+gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+    -fsanitize=address,undefined -fno-omit-frame-pointer \
+    tests/x64_run_test.c \
+    src/x64_run.c src/x64_execute.c src/x64_decode.c \
+    src/x64_interpret.c src/x64_memory_execute.c \
+    src/x64_memory_instruction.c src/x64_memory_decode.c \
+    src/x64_address.c src/x64_memory_view.c src/x64_stack_execute.c \
+    -o "$build/run-sanitizer-test"
+"$build/run-sanitizer-test"
+
 clang --analyze -Iinclude -std=c11 -Wall -Wextra -Wpedantic -Werror \
     src/x64_decode.c tests/x64_decode_test.c \
     src/x64_interpret.c tests/x64_interpret_test.c \
@@ -159,7 +185,8 @@ clang --analyze -Iinclude -std=c11 -Wall -Wextra -Wpedantic -Werror \
     src/x64_memory_instruction.c tests/x64_memory_instruction_test.c \
     src/x64_memory_view.c tests/x64_memory_view_test.c \
     src/x64_memory_execute.c tests/x64_memory_execute_test.c \
-    src/x64_stack_execute.c tests/x64_stack_execute_test.c
+    src/x64_stack_execute.c tests/x64_stack_execute_test.c \
+    src/x64_run.c tests/x64_run_test.c
 
 printf '%s\n' 'X64 DECODE + INTERPRET VERIFY: PASS'
 printf '%s\n' 'X64 DECODE + INTERPRET + EXECUTE VERIFY: PASS'
@@ -169,4 +196,5 @@ printf '%s\n' 'X64 MEMORY INSTRUCTION VERIFY: PASS'
 printf '%s\n' 'X64 MEMORY VIEW VERIFY: PASS'
 printf '%s\n' 'X64 MEMORY EXECUTE VERIFY: PASS'
 printf '%s\n' 'X64 STACK EXECUTE VERIFY: PASS'
+printf '%s\n' 'X64 RUN VERIFY: PASS'
 printf '%s\n' 'X64 CORE VERIFY: PASS'
