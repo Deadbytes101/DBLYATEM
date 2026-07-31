@@ -1,0 +1,9 @@
+DBLYATEM_VERIFY_MANIFEST_V1
+FULL_TREE=GNUmakefile
+FULL_TREE_TARGET=clean
+FULL_TREE_TARGET=all
+FULL_TREE_TARGET=test
+STANDALONE=tools/verify-win32-provider.sh
+STANDALONE=tools/verify-win32-kernel32.sh
+STANDALONE=tools/verify-win32-kernel32-invoke.sh
+STANDALONE=tools/verify-win32-kernel32-gateway.sh

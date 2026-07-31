@@ -1,0 +1,60 @@
+DBLYATEM FULL-TREE VERIFICATION
+==============================
+
+PURPOSE
+-------
+
+Run the complete repository test surface through one fail-closed command and
+retain machine-readable evidence tied to one exact Git commit.
+
+COMMAND
+-------
+
+    ./tools/verify-all.sh
+
+The command requires a clean tracked worktree plus POSIX sh, Git, GNU Make,
+GCC, and Clang. It performs:
+
+    CONTRACT VALIDATION
+    CLEAN STRICT GCC FULL-TREE BUILD AND TEST
+    CLEAN STRICT CLANG FULL-TREE BUILD AND TEST
+    EVERY tools/verify-win32-*.sh STANDALONE VERIFIER
+
+The standalone set is checked against tools/verify-manifest.txt before any
+compiler is run. A missing, unlisted, duplicate, or non-executable verifier is
+a hard failure.
+
+EVIDENCE
+--------
+
+    build/verify-all/manifest.txt
+    build/verify-all/logs/*.log
+
+The manifest records:
+
+    EXACT COMMIT SHA
+    START AND END UTC
+    GCC AND CLANG VERSION LINES
+    EVERY COMMAND
+    EVERY EXIT CODE
+    EVERY DURATION
+    RAW LOG PATHS
+    FINAL PASS OR FAILURE STAGE
+
+A failed run still publishes all logs collected before the failure. A later
+run replaces build/verify-all with one internally consistent evidence set.
+
+CONTRACT-ONLY CHECK
+-------------------
+
+    ./tools/verify-all.sh --contract
+    ./tests/verify_all_contract_test.sh
+
+Contract mode validates manifest coverage without compiling the runtime.
+
+BOUNDARY
+--------
+
+This is local observed verification. It is not a GitHub Actions workflow and
+must not be reported as GitHub CI. It changes no runtime API or semantics and
+makes no DBLYATEM-versus-Winlator performance claim.
