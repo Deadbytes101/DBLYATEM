@@ -104,3 +104,39 @@ gateway_result_verify: $(BUILD)/gateway_result_test
 	./$(BUILD)/gateway_result_test
 
 test: gateway_result_verify
+
+CORE += src/gateway_auth_complete.c
+HEADERS += include/dblyat/gateway_auth_complete.h
+
+$(BUILD)/dblyatem: src/gateway_auth_complete.c \
+                   include/dblyat/gateway_auth_complete.h
+
+$(BUILD)/gateway_auth_complete_test: tests/gateway_auth_complete_test.c \
+                                     src/gateway_auth_complete.c \
+                                     src/gateway_result.c \
+                                     include/dblyat/gateway_auth_complete.h \
+                                     include/dblyat/gateway_result.h \
+                                     include/dblyat/gateway_invoke.h \
+                                     include/dblyat/gateway_complete.h \
+                                     include/dblyat/gateway_return_apply.h \
+                                     include/dblyat/gateway_return.h \
+                                     include/dblyat/gateway_frame.h \
+                                     include/dblyat/gateway_enter.h \
+                                     include/dblyat/gateway_dispatch.h \
+                                     include/dblyat/gateway_lookup.h \
+                                     include/dblyat/gateway_decode.h \
+                                     include/dblyat/gateway_emit.h \
+                                     include/dblyat/gateway_plan.h \
+                                     include/dblyat/iat_plan.h \
+                                     include/dblyat/bind.h \
+                                     include/dblyat/import.h \
+                                     include/dblyat/map.h \
+                                     include/dblyat/pe.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/gateway_auth_complete_test.c \
+		src/gateway_auth_complete.c src/gateway_result.c -o $@
+
+.PHONY: gateway_auth_complete_verify
+gateway_auth_complete_verify: $(BUILD)/gateway_auth_complete_test
+	./$(BUILD)/gateway_auth_complete_test
+
+test: gateway_auth_complete_verify
