@@ -5,10 +5,11 @@ CFLAGS := -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
 
 BUILD := build
 CORE := src/pe.c src/map.c src/reloc.c src/reloc_apply.c src/import.c src/bind.c \
-        src/iat_plan.c
+        src/iat_plan.c src/iat_apply.c
 HEADERS := include/dblyat/pe.h include/dblyat/map.h include/dblyat/reloc.h \
            include/dblyat/reloc_apply.h include/dblyat/import.h \
-           include/dblyat/bind.h include/dblyat/iat_plan.h
+           include/dblyat/bind.h include/dblyat/iat_plan.h \
+           include/dblyat/iat_apply.h
 
 .PHONY: all test clean
 
@@ -58,12 +59,20 @@ $(BUILD)/iat_plan_test: tests/iat_plan_test.c src/iat_plan.c \
                         include/dblyat/pe.h | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/iat_plan_test.c src/iat_plan.c -o $@
 
+$(BUILD)/iat_apply_test: tests/iat_apply_test.c src/iat_apply.c \
+                         include/dblyat/iat_apply.h \
+                         include/dblyat/iat_plan.h include/dblyat/bind.h \
+                         include/dblyat/import.h include/dblyat/map.h \
+                         include/dblyat/pe.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/iat_apply_test.c src/iat_apply.c -o $@
+
 $(BUILD)/pe_structs_test: tests/pe_structs_test.c include/dblyat/pe_structs.h | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/pe_structs_test.c -o $@
 
 test: $(BUILD)/pe_test $(BUILD)/map_test $(BUILD)/reloc_test \
       $(BUILD)/reloc_apply_test $(BUILD)/import_test $(BUILD)/bind_test \
-      $(BUILD)/iat_plan_test $(BUILD)/pe_structs_test
+      $(BUILD)/iat_plan_test $(BUILD)/iat_apply_test \
+      $(BUILD)/pe_structs_test
 	./$(BUILD)/pe_test
 	./$(BUILD)/map_test
 	./$(BUILD)/reloc_test
@@ -71,6 +80,7 @@ test: $(BUILD)/pe_test $(BUILD)/map_test $(BUILD)/reloc_test \
 	./$(BUILD)/import_test
 	./$(BUILD)/bind_test
 	./$(BUILD)/iat_plan_test
+	./$(BUILD)/iat_apply_test
 	./$(BUILD)/pe_structs_test
 
 clean:
