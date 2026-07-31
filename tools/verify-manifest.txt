@@ -8,3 +8,4 @@ STANDALONE=tools/verify-win32-kernel32.sh
 STANDALONE=tools/verify-win32-kernel32-invoke.sh
 STANDALONE=tools/verify-win32-kernel32-gateway.sh
 STANDALONE=tools/verify-x64-decode.sh
+STANDALONE=tools/verify-x64-ir-boundary.sh
