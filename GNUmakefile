@@ -41,3 +41,34 @@ gateway_roundtrip_verify: $(BUILD)/gateway_roundtrip_test
 	./$(BUILD)/gateway_roundtrip_test
 
 test: gateway_roundtrip_verify
+
+CORE += src/gateway_invoke.c
+HEADERS += include/dblyat/gateway_invoke.h
+
+$(BUILD)/dblyatem: src/gateway_invoke.c include/dblyat/gateway_invoke.h
+
+$(BUILD)/gateway_invoke_test: tests/gateway_invoke_test.c \
+                              src/gateway_invoke.c \
+                              include/dblyat/gateway_invoke.h \
+                              include/dblyat/gateway_enter.h \
+                              include/dblyat/gateway_return_apply.h \
+                              include/dblyat/gateway_return.h \
+                              include/dblyat/gateway_frame.h \
+                              include/dblyat/gateway_dispatch.h \
+                              include/dblyat/gateway_lookup.h \
+                              include/dblyat/gateway_decode.h \
+                              include/dblyat/gateway_emit.h \
+                              include/dblyat/gateway_plan.h \
+                              include/dblyat/iat_plan.h \
+                              include/dblyat/bind.h \
+                              include/dblyat/import.h \
+                              include/dblyat/map.h \
+                              include/dblyat/pe.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/gateway_invoke_test.c \
+		src/gateway_invoke.c -o $@
+
+.PHONY: gateway_invoke_verify
+gateway_invoke_verify: $(BUILD)/gateway_invoke_test
+	./$(BUILD)/gateway_invoke_test
+
+test: gateway_invoke_verify
