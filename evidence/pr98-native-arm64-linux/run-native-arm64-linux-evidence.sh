@@ -3,8 +3,16 @@ set -eu
 
 repo_url='https://github.com/Deadbytes101/DBLYATEM.git'
 expected_feature='8886fe231eaaefd9c28ed6fe9a7dc404739cc566'
+expected_challenge='0f9d66bc95e62d3c5fa1ae695ed9917605db48c31e24427667c9dd8d08391328'
+challenge=${DBLYATEM_EVIDENCE_CHALLENGE:-}
 default_output="$PWD/pr98-native-arm64-linux-evidence"
 output=${1:-"$default_output"}
+
+[ "$challenge" = "$expected_challenge" ] || {
+    printf '%s\n' \
+        'PR98 NATIVE ARM64 LINUX EVIDENCE: FAIL: evidence challenge mismatch' >&2
+    exit 1
+}
 
 [ -n "$output" ] || {
     printf '%s\n' 'PR98 NATIVE ARM64 LINUX EVIDENCE: FAIL: empty output path' >&2
@@ -156,6 +164,7 @@ checksums="$output/SHA256SUMS"
 {
     printf '%s\n' 'DBLYATEM_PR98_NATIVE_ARM64_LINUX_HOST_V1'
     printf 'COMMIT_SHA=%s\n' "$actual_feature"
+    printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
     printf 'KERNEL_NAME=%s\n' "$kernel_name"
     printf 'MACHINE=%s\n' "$machine"
     printf '%s\n' 'HOST_ARCH=AARCH64'
@@ -248,6 +257,7 @@ dirty_after=$(git -C "$source_dir" status --porcelain --untracked-files=no)
 {
     printf '%s\n' 'DBLYATEM_PR98_NATIVE_ARM64_LINUX_EVIDENCE_ACCEPTED'
     printf 'HEAD=%s\n' "$actual_feature"
+    printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
     printf 'MACHINE=%s\n' "$machine"
     printf '%s\n' 'HOST_ARCH=AARCH64'
     printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
@@ -295,6 +305,7 @@ tar -C "$output_parent" \
 printf '\n%s\n' \
     'DBLYATEM PR98 NATIVE ARM64 LINUX EVIDENCE ACCEPTED'
 printf 'HEAD=%s\n' "$actual_feature"
+printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
 printf 'MACHINE=%s\n' "$machine"
 printf 'PAGE_SIZE=%s\n' "$page_size"
 printf 'VIRTUALIZATION=%s\n' "$virtualization"
