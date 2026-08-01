@@ -32,8 +32,8 @@ jobs:
           command: |
             set -euo pipefail
 
-            expected='8886fe231eaaefd9c28ed6fe9a7dc404739cc566'
-            challenge='0f9d66bc95e62d3c5fa1ae695ed9917605db48c31e24427667c9dd8d08391328'
+            expected='1f2080f4d361b5794a2d3057c7b0dfa770cafd20'
+            challenge='b72286f89016a10b5c90c49fd7b35b0d9cec07fcb7b027009c60ad5b80afa412'
             source='/tmp/dblyatem-pr98-feature'
             artifact_root='/tmp/dblyatem-pr98-arm64-artifacts'
             evidence="$artifact_root/pr98-native-arm64-linux-evidence"
