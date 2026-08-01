@@ -76,9 +76,17 @@ Debian / Ubuntu example:
     sudo apt-get install -y \
         git gcc clang file util-linux coreutils tar
 
+Freshness challenge:
+
+    0f9d66bc95e62d3c5fa1ae695ed9917605db48c31e24427667c9dd8d08391328
+
 Run:
 
     chmod +x run-native-arm64-linux-evidence.sh
+
+    export DBLYATEM_EVIDENCE_CHALLENGE=\
+0f9d66bc95e62d3c5fa1ae695ed9917605db48c31e24427667c9dd8d08391328
+
     ./run-native-arm64-linux-evidence.sh
 
 Optional output path:
@@ -91,6 +99,7 @@ EXPECTED FINAL OUTPUT
 
     DBLYATEM PR98 NATIVE ARM64 LINUX EVIDENCE ACCEPTED
     HEAD=8886fe231eaaefd9c28ed6fe9a7dc404739cc566
+    EVIDENCE_CHALLENGE=0f9d66bc95e62d3c5fa1ae695ed9917605db48c31e24427667c9dd8d08391328
     MACHINE=aarch64
     PAGE_SIZE=4096
 
@@ -127,6 +136,7 @@ ACCEPTANCE CONTRACT
 -------------------
 
     COMMIT SHA EXACT
+    EVIDENCE CHALLENGE 0f9d66bc95e62d3c5fa1ae695ed9917605db48c31e24427667c9dd8d08391328
     MACHINE aarch64 OR arm64
     HOST ARCH AARCH64
     PAGE SIZE 4096
