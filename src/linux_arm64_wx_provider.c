@@ -35,13 +35,11 @@ static bool regions_overlap(const void *left,
     return left_address - right_address < right_size;
 }
 
-static bool canonical_nonzero(uint64_t address)
+static bool address_representable_nonzero(uint64_t address)
 {
-    const uint64_t upper = address >> 48u;
-    const uint64_t sign = (address >> 47u) & UINT64_C(1);
+    const uintptr_t narrowed = (uintptr_t)address;
 
-    return address != 0u &&
-           upper == (sign != 0u ? UINT64_C(0xffff) : UINT64_C(0));
+    return address != 0u && (uint64_t)narrowed == address;
 }
 
 static bool add_u64(uint64_t left, uint64_t right, uint64_t *result)
@@ -90,7 +88,7 @@ static bool plan_valid(const db_arm64_code_image_plan *plan)
         plan->format_version != DB_ARM64_CODE_IMAGE_FORMAT_VERSION ||
         plan->word_count == 0u ||
         !zero_bytes(plan->reserved, sizeof(plan->reserved)) ||
-        !canonical_nonzero(plan->code_base) ||
+        !address_representable_nonzero(plan->code_base) ||
         plan->page_size < UINT64_C(4096) ||
         (plan->page_size & (plan->page_size - UINT64_C(1))) != 0u ||
         (plan->code_base & (plan->page_size - UINT64_C(1))) != 0u ||
@@ -129,9 +127,9 @@ static bool plan_valid(const db_arm64_code_image_plan *plan)
         plan->entry_address != expected_entry_address ||
         plan->image_end_address != expected_image_end ||
         plan->allocation_end_address != expected_allocation_end ||
-        !canonical_nonzero(plan->entry_address) ||
-        !canonical_nonzero(plan->image_end_address) ||
-        !canonical_nonzero(plan->allocation_end_address)) {
+        !address_representable_nonzero(plan->entry_address) ||
+        !address_representable_nonzero(plan->image_end_address) ||
+        !address_representable_nonzero(plan->allocation_end_address)) {
         return false;
     }
 

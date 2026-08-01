@@ -420,6 +420,22 @@ static int test_plan_guards(void)
                                     image, sizeof(image),
                                     &handle, &audit) ==
           DB_LINUX_ARM64_WX_BAD_PLATFORM);
+
+#if UINTPTR_MAX > UINT32_MAX
+    reset_context(&context, MOCK_FAIL_MAP);
+    context.page =
+        (uint8_t *)(uintptr_t)UINT64_C(0x0000aaaa00000000);
+    platform = platform_for(&context);
+    plan = valid_plan(UINT64_C(0x0000aaaa00000000), sizeof(image));
+    db_linux_arm64_wx_handle_init(&handle);
+    CHECK(db_linux_arm64_wx_publish(&platform, &plan,
+                                    image, sizeof(image),
+                                    &handle, &audit) ==
+          DB_LINUX_ARM64_WX_MAP_FAILED);
+    CHECK(context.map_calls == 1u);
+    CHECK(audit.status == DB_LINUX_ARM64_WX_MAP_FAILED);
+#endif
+
     return 1;
 }
 
