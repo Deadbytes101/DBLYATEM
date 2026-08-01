@@ -69,6 +69,10 @@ FILES
         Provision and execute the evidence route automatically on a fresh
         Ubuntu ARM64 VM.
 
+    retrieve-cloud-init-evidence.sh
+        Retrieve cloud-init output through strict SSH from Windows WSL or any
+        POSIX host, verify it locally, and create a privacy-preserving receipt.
+
 HOST USAGE
 ----------
 
@@ -120,14 +124,74 @@ verifies both the evidence directory and tar.gz archive, and writes:
 The cloud-init file contains no private key, cloud credential, public IP,
 account identifier, or billing data.
 
+WINDOWS WSL RETRIEVAL
+---------------------
+
+The retrieval script requires OpenSSH `ssh` and `scp`, a non-empty trusted
+known_hosts file, and the offline verifier beside the script.
+
+It enforces:
+
+    BATCH MODE
+    STRICT HOST KEY CHECKING
+    REMOTE STATUS EXACT MARKERS
+    REMOTE ARCHIVE SHA-256 PASS
+    LOCAL ARCHIVE SHA-256 PASS
+    LOCAL OFFLINE PACKAGE VERIFY PASS
+    FIXED LOCAL DESTINATION BASENAME
+    NO SYMLINK DESTINATION
+
+The script accepts `user@host-or-ssh-alias`. IPv6 literals and shell metacharacters
+are rejected. Use an SSH config alias for an IPv6 target.
+
+Example from WSL with an explicit identity file:
+
+    chmod +x retrieve-cloud-init-evidence.sh
+
+    export DBLYATEM_KNOWN_HOSTS="$HOME/.ssh/known_hosts"
+
+    ./retrieve-cloud-init-evidence.sh \
+        ubuntu@dblyatem-arm64 \
+        22 \
+        /mnt/c/Users/DEADBYTE/.ssh/dblyatem-arm64 \
+        /mnt/d/TECHNICAL/DblyatEM/build
+
+Example using an SSH agent or default configured identity:
+
+    ./retrieve-cloud-init-evidence.sh \
+        ubuntu@dblyatem-arm64 \
+        22 \
+        '' \
+        /mnt/d/TECHNICAL/DblyatEM/build
+
+Local retrieval output:
+
+    pr99-native-arm64-linux-evidence-current/
+        DBLYATEM-PR98-NATIVE-ARM64-STATUS.txt
+        pr98-native-arm64-linux-evidence.tar.gz
+        pr98-native-arm64-linux-evidence.tar.gz.sha256
+        retrieval.txt
+        SHA256SUMS
+
+The retrieval receipt records only SHA-256 of `user@host-or-alias`; it does not
+store the raw host, private-key path, key bytes, cloud account, or billing data.
+
 EXPECTED FINAL OUTPUT
 ---------------------
+
+Host execution:
 
     DBLYATEM PR98 NATIVE ARM64 LINUX EVIDENCE ACCEPTED
     HEAD=8886fe231eaaefd9c28ed6fe9a7dc404739cc566
     EVIDENCE_CHALLENGE=0f9d66bc95e62d3c5fa1ae695ed9917605db48c31e24427667c9dd8d08391328
     MACHINE=aarch64
     PAGE_SIZE=4096
+
+Retrieval:
+
+    DBLYATEM PR98 NATIVE ARM64 CLOUD EVIDENCE RETRIEVAL: PASS
+    RETRIEVAL=PASS
+    LOCAL_OFFLINE_PACKAGE_VERIFY=PASS
 
 PACKAGE OUTPUT
 --------------
@@ -176,6 +240,7 @@ ACCEPTANCE CONTRACT
     NO RWX PASS COUNT 1
     FINAL PROVIDER PASS COUNT 1
     HASHES VERIFY
+    RETRIEVAL RECEIPT VERIFY
 
 DISPOSITION
 -----------
