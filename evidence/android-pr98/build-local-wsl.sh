@@ -37,24 +37,48 @@ if [ -n "$harness_dirty" ]; then
     exit 65
 fi
 
-for command_name in sudo git curl unzip sha256sum sed grep awk strings find sort xargs
+for command_name in \
+    git \
+    curl \
+    unzip \
+    sha256sum \
+    sed \
+    grep \
+    awk \
+    strings \
+    find \
+    sort \
+    xargs \
+    javac \
+    java \
+    readlink
  do
     command -v "$command_name" >/dev/null 2>&1 || {
-        printf 'MISSING HOST COMMAND: %s\n' "$command_name" >&2
+        printf 'MISSING BOOTSTRAPPED HOST COMMAND: %s\n' "$command_name" >&2
         exit 66
     }
  done
 
-printf '%s\n' 'INSTALLING REQUIRED WSL BUILD PACKAGES'
-sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    git \
-    openjdk-17-jdk-headless \
-    unzip \
-    zip \
-    binutils
+javac_version=$(javac -version 2>&1 | sed -n '1p')
+java_major=$(printf '%s\n' "$javac_version" |
+    awk '{print $2}' |
+    sed 's/^1\.//' |
+    sed 's/[^0-9].*$//')
+
+case "$java_major" in
+    ''|*[!0-9]*)
+        printf 'UNPARSEABLE JAVAC VERSION: %s\n' "$javac_version" >&2
+        exit 67
+        ;;
+esac
+
+if [ "$java_major" -lt 17 ]; then
+    printf 'JDK TOO OLD: major=%s required_minimum=17\n' \
+        "$java_major" >&2
+    exit 68
+fi
+
+printf 'OBSERVED BOOTSTRAPPED JDK MAJOR=%s\n' "$java_major"
 
 JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")
 export JAVA_HOME
@@ -90,7 +114,7 @@ sdkmanager="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
 
 if [ ! -x "$sdkmanager" ]; then
     printf 'SDKMANAGER NOT FOUND: %s\n' "$sdkmanager" >&2
-    exit 67
+    exit 69
 fi
 
 export PATH="$sdk_root/cmdline-tools/latest/bin:$sdk_root/platform-tools:$PATH"
@@ -124,7 +148,7 @@ if [ ! -x "$gradle_root/bin/gradle" ]; then
         *)
             printf '%s\n' 'INVALID GRADLE SHA256 RESPONSE' >&2
             cat "$gradle_sha_file" >&2
-            exit 68
+            exit 70
             ;;
     esac
     printf '%s  %s\n' "$gradle_sha" "$gradle_zip" |
@@ -136,7 +160,7 @@ gradle="$gradle_root/bin/gradle"
 
 if [ ! -x "$gradle" ]; then
     printf 'GRADLE NOT FOUND: %s\n' "$gradle" >&2
-    exit 69
+    exit 71
 fi
 
 printf '%s\n' 'CLONING EXACT PR98 FEATURE HEAD'
@@ -155,13 +179,13 @@ if [ "$feature_head" != "$expected_feature_head" ]; then
     printf '%s\n' 'WRONG PR98 FEATURE HEAD' >&2
     printf 'EXPECTED=%s\n' "$expected_feature_head" >&2
     printf 'ACTUAL=%s\n' "$feature_head" >&2
-    exit 70
+    exit 72
 fi
 
 if [ -n "$feature_dirty" ]; then
     printf '%s\n' 'FRESH PR98 FEATURE CHECKOUT IS DIRTY' >&2
     printf '%s\n' "$feature_dirty" >&2
-    exit 71
+    exit 73
 fi
 
 project_root="$harness_root/evidence/android-pr98"
@@ -170,7 +194,7 @@ test_source="$project_root/app/build/outputs/apk/androidTest/debug/app-debug-and
 
 if [ ! -f "$project_root/settings.gradle" ]; then
     printf 'ANDROID PROJECT NOT FOUND: %s\n' "$project_root" >&2
-    exit 72
+    exit 74
 fi
 
 printf 'sdk.dir=%s\n' "$sdk_root" > "$project_root/local.properties"
@@ -205,7 +229,7 @@ for artifact in "$app_source" "$test_source"
  do
     [ -f "$artifact" ] || {
         printf 'BUILT APK MISSING: %s\n' "$artifact" >&2
-        exit 73
+        exit 75
     }
  done
 
@@ -224,21 +248,21 @@ unzip -l "$test_apk" > "$output_dir/android-build-evidence/test-apk-entries.txt"
 grep -F 'lib/arm64-v8a/libpr98evidence.so' \
     "$output_dir/android-build-evidence/app-apk-entries.txt" >/dev/null || {
         printf '%s\n' 'APP APK LACKS ARM64 EVIDENCE LIBRARY' >&2
-        exit 74
+        exit 76
     }
 
 if grep -E 'lib/(x86|x86_64|armeabi-v7a)/' \
         "$output_dir/android-build-evidence/app-apk-entries.txt" >/dev/null
 then
     printf '%s\n' 'APP APK CONTAINS FORBIDDEN NON-ARM64 ABI' >&2
-    exit 75
+    exit 77
 fi
 
 unzip -p "$app_apk" lib/arm64-v8a/libpr98evidence.so |
     strings |
     grep -F "$expected_feature_head" >/dev/null || {
         printf '%s\n' 'APK DOES NOT EMBED EXACT PR98 FEATURE HEAD' >&2
-        exit 76
+        exit 78
     }
 
 if [ -f /mnt/d/TECHNICAL/DblyatEM/build/pr100-physical-device-preflight/device-preflight.txt ]; then
@@ -260,6 +284,7 @@ sdkmanager_version=$("$sdkmanager" --version | sed -n '1p')
     printf '%s\n' 'APP_ABI=arm64-v8a'
     printf '%s\n' 'TEST_RUNNER=androidx.test.runner.AndroidJUnitRunner'
     printf 'JAVA=%s\n' "$java_version"
+    printf 'JAVA_MAJOR=%s\n' "$java_major"
     printf 'GRADLE=%s\n' "$gradle_version_line"
     printf 'SDKMANAGER=%s\n' "$sdkmanager_version"
     printf '%s\n' 'COMPILE_SDK=36'
