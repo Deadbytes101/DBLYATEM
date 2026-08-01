@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-expected_head='8886fe231eaaefd9c28ed6fe9a7dc404739cc566'
+expected_head='5c219e8872895adcb7c3e9af17c32e9676420ea5'
 package='com.deadbyte.dblyatem.pr98evidence'
 test_package='com.deadbyte.dblyatem.pr98evidence.test'
 runner='androidx.test.runner.AndroidJUnitRunner'

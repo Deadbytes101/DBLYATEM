@@ -11,7 +11,7 @@ CLASSIFICATION
 EXACT FEATURE INPUT
 
     PR              #98
-    COMMIT          8886fe231eaaefd9c28ed6fe9a7dc404739cc566
+    COMMIT          5c219e8872895adcb7c3e9af17c32e9676420ea5
     BRANCH          deadbyte/linux-arm64-wx-provider
 
 BUILD CONTRACT
@@ -59,7 +59,7 @@ device is rejected for this exact evidence class.
 
 RUNTIME CONTRACT
 
-    COMMIT_SHA=8886fe231eaaefd9c28ed6fe9a7dc404739cc566
+    COMMIT_SHA=5c219e8872895adcb7c3e9af17c32e9676420ea5
     COMPILE_ARCH=AARCH64
     UNAME_MACHINE=aarch64 OR arm64
     RUNTIME_PAGE_SIZE=4096

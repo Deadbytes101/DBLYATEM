@@ -13,7 +13,7 @@ get_filename_component(
 )
 
 set(DBLYATEM_EXPECTED_HEAD
-    "8886fe231eaaefd9c28ed6fe9a7dc404739cc566"
+    "5c219e8872895adcb7c3e9af17c32e9676420ea5"
 )
 
 set(DBLYATEM_REQUIRED_FILES

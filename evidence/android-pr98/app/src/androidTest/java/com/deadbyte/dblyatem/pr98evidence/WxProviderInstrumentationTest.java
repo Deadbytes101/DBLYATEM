@@ -25,7 +25,7 @@ public final class WxProviderInstrumentationTest {
     private static final String EVIDENCE_FILE_NAME =
         "dblyatem-pr98-android-evidence.txt";
     private static final String EXPECTED_HEAD =
-        "8886fe231eaaefd9c28ed6fe9a7dc404739cc566";
+        "5c219e8872895adcb7c3e9af17c32e9676420ea5";
 
     @Test
     public void exactHeadPublishesAndExecutesArm64Code() throws Exception {

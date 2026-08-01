@@ -3,7 +3,7 @@ set -eu
 
 feature_remote='https://github.com/Deadbytes101/DBLYATEM.git'
 feature_branch='deadbyte/linux-arm64-wx-provider'
-expected_feature_head='8886fe231eaaefd9c28ed6fe9a7dc404739cc566'
+expected_feature_head='5c219e8872895adcb7c3e9af17c32e9676420ea5'
 
 command_tools_revision='15859902'
 command_tools_sha256='4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583'
