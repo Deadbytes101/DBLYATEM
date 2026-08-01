@@ -19,6 +19,19 @@ case "$output" in
         ;;
 esac
 
+output_name_guard=$(basename "$output")
+[ "$output_name_guard" = pr98-native-arm64-linux-evidence ] || {
+    printf 'PR98 NATIVE ARM64 LINUX EVIDENCE: FAIL: output basename must be %s\n' \
+        'pr98-native-arm64-linux-evidence' >&2
+    exit 1
+}
+
+[ ! -L "$output" ] || {
+    printf '%s\n' \
+        'PR98 NATIVE ARM64 LINUX EVIDENCE: FAIL: output path is a symlink' >&2
+    exit 1
+}
+
 fail()
 {
     printf 'PR98 NATIVE ARM64 LINUX EVIDENCE: FAIL: %s\n' "$*" >&2
