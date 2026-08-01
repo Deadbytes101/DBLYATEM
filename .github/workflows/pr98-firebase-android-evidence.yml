@@ -1,0 +1,373 @@
+name: PR98 Firebase Android Evidence
+
+on:
+  push:
+    branches:
+      - deadbyte/pr98-firebase-android-evidence
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  DBLYATEM_FEATURE_SHA: 8886fe231eaaefd9c28ed6fe9a7dc404739cc566
+  DBLYATEM_PROJECT_DIR: evidence/android-pr98
+
+jobs:
+  build-android-instrumentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout evidence harness
+        uses: actions/checkout@v4
+        with:
+          path: evidence-repo
+
+      - name: Checkout exact PR98 feature head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DBLYATEM_FEATURE_SHA }}
+          path: feature-src
+          fetch-depth: 1
+
+      - name: Verify exact feature checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          actual=$(git -C feature-src rev-parse HEAD)
+          dirty=$(git -C feature-src status --porcelain --untracked-files=no)
+
+          if [ "$actual" != "$DBLYATEM_FEATURE_SHA" ]; then
+              printf 'EXPECTED=%s\n' "$DBLYATEM_FEATURE_SHA"
+              printf 'ACTUAL=%s\n' "$actual"
+              exit 90
+          fi
+
+          if [ -n "$dirty" ]; then
+              printf '%s\n' 'EXACT FEATURE CHECKOUT IS DIRTY'
+              printf '%s\n' "$dirty"
+              exit 91
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle 9.4.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Install pinned Android build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager \
+              'platform-tools' \
+              'platforms;android-36' \
+              'build-tools;36.0.0' \
+              'ndk;28.2.13676358' \
+              'cmake;3.22.1'
+
+      - name: Build ARM64 app and instrumentation APKs
+        shell: bash
+        working-directory: evidence-repo/evidence/android-pr98
+        run: |
+          set -euo pipefail
+
+          gradle \
+              --no-daemon \
+              --stacktrace \
+              -PdblyatemFeatureDir="$GITHUB_WORKSPACE/feature-src" \
+              :app:assembleDebug \
+              :app:assembleDebugAndroidTest
+
+      - name: Verify APK architecture and exact-head binding
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          project="$GITHUB_WORKSPACE/evidence-repo/$DBLYATEM_PROJECT_DIR"
+          app="$project/app/build/outputs/apk/debug/app-debug.apk"
+          test="$project/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+          evidence="$GITHUB_WORKSPACE/android-build-evidence"
+
+          test -f "$app"
+          test -f "$test"
+
+          rm -rf "$evidence"
+          mkdir -p "$evidence/apks"
+
+          cp "$app" "$evidence/apks/pr98-evidence-app.apk"
+          cp "$test" "$evidence/apks/pr98-evidence-test.apk"
+
+          unzip -l "$app" > "$evidence/app-apk-entries.txt"
+          unzip -l "$test" > "$evidence/test-apk-entries.txt"
+
+          grep -F 'lib/arm64-v8a/libpr98evidence.so' \
+              "$evidence/app-apk-entries.txt" >/dev/null
+
+          if grep -E 'lib/(x86|x86_64|armeabi-v7a)/' \
+              "$evidence/app-apk-entries.txt" >/dev/null
+          then
+              printf '%s\n' 'APP APK CONTAINS FORBIDDEN NON-ARM64 ABI'
+              exit 100
+          fi
+
+          unzip -p "$app" \
+              lib/arm64-v8a/libpr98evidence.so |
+              strings |
+              grep -F "$DBLYATEM_FEATURE_SHA" >/dev/null
+
+          {
+              printf '%s\n' 'DBLYATEM_PR98_ANDROID_BUILD_V1'
+              printf 'COMMIT_SHA=%s\n' "$DBLYATEM_FEATURE_SHA"
+              printf '%s\n' 'APP_ABI=arm64-v8a'
+              printf '%s\n' 'TEST_RUNNER=androidx.test.runner.AndroidJUnitRunner'
+              printf '%s\n' 'FRESH_FEATURE_CHECKOUT_DIRTY=NO'
+              printf 'GITHUB_RUN_ID=%s\n' "$GITHUB_RUN_ID"
+              printf 'GITHUB_RUN_ATTEMPT=%s\n' "$GITHUB_RUN_ATTEMPT"
+          } > "$evidence/build.txt"
+
+          sha256sum \
+              "$evidence/apks/pr98-evidence-app.apk" \
+              "$evidence/apks/pr98-evidence-test.apk" \
+              > "$evidence/SHA256SUMS"
+
+          cat "$evidence/build.txt"
+          cat "$evidence/SHA256SUMS"
+
+      - name: Upload Android build evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr98-android-build-${{ github.run_id }}
+          path: android-build-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  firebase-test-lab:
+    needs: build-android-instrumentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      FIREBASE_DEVICE_MODEL: ${{ vars.FIREBASE_TESTLAB_DEVICE_MODEL }}
+      FIREBASE_ANDROID_VERSION: ${{ vars.FIREBASE_TESTLAB_ANDROID_VERSION }}
+      FIREBASE_RESULTS_BUCKET: ${{ vars.FIREBASE_TESTLAB_RESULTS_BUCKET }}
+      GCP_WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+    steps:
+      - name: Check Firebase configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          configured=1
+
+          for value in \
+              "$GCP_PROJECT_ID" \
+              "$FIREBASE_DEVICE_MODEL" \
+              "$FIREBASE_ANDROID_VERSION" \
+              "$FIREBASE_RESULTS_BUCKET" \
+              "$GCP_WIF_PROVIDER" \
+              "$GCP_SERVICE_ACCOUNT"
+          do
+              if [ -z "$value" ]; then
+                  configured=0
+              fi
+          done
+
+          printf 'FIREBASE_CONFIGURED=%s\n' "$configured" \
+              >> "$GITHUB_ENV"
+
+          if [ "$configured" -eq 0 ]; then
+              printf '%s\n' \
+                  'FIREBASE TEST LAB: NOT CONFIGURED; BUILD-ONLY AUDIT COMPLETE'
+          fi
+
+      - name: Checkout repository before Google authentication
+        if: env.FIREBASE_CONFIGURED == '1'
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        if: env.FIREBASE_CONFIGURED == '1'
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        if: env.FIREBASE_CONFIGURED == '1'
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          version: '>= 516.0.0'
+
+      - name: Download exact-head Android APKs
+        if: env.FIREBASE_CONFIGURED == '1'
+        uses: actions/download-artifact@v4
+        with:
+          name: pr98-android-build-${{ github.run_id }}
+          path: android-build-evidence
+
+      - name: Validate Firebase physical ARM64 target
+        if: env.FIREBASE_CONFIGURED == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          evidence="$GITHUB_WORKSPACE/firebase-evidence"
+          mkdir -p "$evidence"
+
+          gcloud firebase test android models list \
+              --project="$GCP_PROJECT_ID" \
+              > "$evidence/models.txt"
+
+          gcloud firebase test android list-device-capacities \
+              --project="$GCP_PROJECT_ID" \
+              > "$evidence/capacities.txt"
+
+          gcloud firebase test android models describe \
+              "$FIREBASE_DEVICE_MODEL" \
+              --project="$GCP_PROJECT_ID" \
+              --format=json \
+              > "$evidence/model.json"
+
+          MODEL_JSON="$evidence/model.json" python3 - <<'PY'
+          import json
+          import os
+
+          path = os.environ["MODEL_JSON"]
+          with open(path, "r", encoding="utf-8") as handle:
+              model = json.load(handle)
+
+          text = json.dumps(model, sort_keys=True).lower()
+
+          if "arm64-v8a" not in text:
+              raise SystemExit("selected Firebase model lacks arm64-v8a")
+
+          if "physical" not in text:
+              raise SystemExit("selected Firebase model is not physical")
+
+          print("FIREBASE_MODEL_ARM64=PASS")
+          print("FIREBASE_MODEL_PHYSICAL=PASS")
+          PY
+
+      - name: Run Firebase Test Lab instrumentation matrix
+        if: env.FIREBASE_CONFIGURED == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          evidence="$GITHUB_WORKSPACE/firebase-evidence"
+          app="$GITHUB_WORKSPACE/android-build-evidence/apks/pr98-evidence-app.apk"
+          test="$GITHUB_WORKSPACE/android-build-evidence/apks/pr98-evidence-test.apk"
+
+          bucket=${FIREBASE_RESULTS_BUCKET#gs://}
+          bucket=${bucket%/}
+          results_dir="dblyatem/pr98/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+
+          test -f "$app"
+          test -f "$test"
+
+          set +e
+          gcloud firebase test android run \
+              --project="$GCP_PROJECT_ID" \
+              --type=instrumentation \
+              --app="$app" \
+              --test="$test" \
+              --device="model=$FIREBASE_DEVICE_MODEL,version=$FIREBASE_ANDROID_VERSION,locale=en,orientation=portrait" \
+              --test-targets='class com.deadbyte.dblyatem.pr98evidence.WxProviderInstrumentationTest' \
+              --timeout=10m \
+              --no-auto-google-login \
+              --record-video \
+              --directories-to-pull='/sdcard/Android/data/com.deadbyte.dblyatem.pr98evidence/files' \
+              --results-bucket="$bucket" \
+              --results-dir="$results_dir" \
+              --results-history-name='DBLYATEM PR98 Android ARM64' \
+              --client-details="pr=98,commit=$DBLYATEM_FEATURE_SHA,github_run=$GITHUB_RUN_ID" \
+              2>&1 | tee "$evidence/gcloud-run.txt"
+          test_status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$test_status" -ne 0 ]; then
+              printf 'FIREBASE TEST MATRIX EXIT=%s\n' "$test_status"
+              exit "$test_status"
+          fi
+
+          mkdir -p "$evidence/test-results"
+          gcloud storage cp \
+              --recursive \
+              "gs://$bucket/$results_dir" \
+              "$evidence/test-results/"
+
+          grep -R -F \
+              'COMMIT_SHA=8886fe231eaaefd9c28ed6fe9a7dc404739cc566' \
+              "$evidence/test-results" >/dev/null
+
+          grep -R -F \
+              'ANDROID_ARM64_RUNTIME_EVIDENCE=PASS' \
+              "$evidence/test-results" >/dev/null
+
+          grep -R -F \
+              'NATIVE_AARCH64_EXECUTION=PASS' \
+              "$evidence/test-results" >/dev/null
+
+          grep -R -F \
+              'NO_RWX_TRANSITION_VERIFY=PASS' \
+              "$evidence/test-results" >/dev/null
+
+          if grep -R -F 'NOT CLAIMED' \
+              "$evidence/test-results" >/dev/null
+          then
+              printf '%s\n' \
+                  'FIREBASE TARGET RESULT CONTAINS NOT CLAIMED'
+              exit 120
+          fi
+
+          {
+              printf '%s\n' 'DBLYATEM_PR98_FIREBASE_ANDROID_V1'
+              printf 'COMMIT_SHA=%s\n' "$DBLYATEM_FEATURE_SHA"
+              printf 'PROJECT_ID=%s\n' "$GCP_PROJECT_ID"
+              printf 'DEVICE_MODEL=%s\n' "$FIREBASE_DEVICE_MODEL"
+              printf 'ANDROID_VERSION=%s\n' "$FIREBASE_ANDROID_VERSION"
+              printf '%s\n' 'DEVICE_CLASS=PHYSICAL'
+              printf '%s\n' 'ABI=arm64-v8a'
+              printf '%s\n' 'ANDROID_ARM64_RUNTIME_EVIDENCE=PASS'
+              printf '%s\n' 'NATIVE_AARCH64_EXECUTION=PASS'
+              printf '%s\n' 'NO_RWX_TRANSITION_VERIFY=PASS'
+              printf 'RESULTS_URI=gs://%s/%s\n' "$bucket" "$results_dir"
+              printf 'GITHUB_RUN_ID=%s\n' "$GITHUB_RUN_ID"
+              printf 'GITHUB_RUN_ATTEMPT=%s\n' "$GITHUB_RUN_ATTEMPT"
+          } > "$evidence/accepted.txt"
+
+          find "$evidence" -type f -print0 |
+              sort -z |
+              xargs -0 sha256sum \
+              > "$evidence/SHA256SUMS"
+
+          cat "$evidence/accepted.txt"
+
+      - name: Upload Firebase evidence
+        if: always() && env.FIREBASE_CONFIGURED == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr98-firebase-android-evidence-${{ github.run_id }}
+          path: firebase-evidence
+          if-no-files-found: error
+          retention-days: 30
