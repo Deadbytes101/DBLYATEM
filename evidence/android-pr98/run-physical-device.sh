@@ -18,7 +18,8 @@ if [ -z "$app_apk" ] || [ -z "$test_apk" ]; then
     exit 64
 fi
 
-for command_name in adb grep sed sha256sum strings unzip uname
+for command_name in \
+    adb grep sed sha256sum strings unzip wc tr sort xargs
  do
     command -v "$command_name" >/dev/null 2>&1 || {
         printf 'MISSING COMMAND: %s\n' "$command_name" >&2
@@ -108,7 +109,8 @@ abi=$(adb_target shell getprop ro.product.cpu.abi |
     tr -d '\r')
 abi_list=$(adb_target shell getprop ro.product.cpu.abilist |
     tr -d '\r')
-page_size=$(adb_target shell getconf PAGESIZE 2>/dev/null |
+page_size=$(adb_target shell sh -c \
+    'getconf PAGESIZE 2>/dev/null || getconf PAGE_SIZE 2>/dev/null || pagesize 2>/dev/null' |
     tr -d '\r' || true)
 qemu=$(adb_target shell getprop ro.kernel.qemu |
     tr -d '\r')
@@ -192,22 +194,26 @@ adb_target uninstall "$package" >/dev/null 2>&1 || true
 
 adb_target install -r -t "$app_apk"
 adb_target install -r -t "$test_apk"
+adb_target shell rm -f "$remote_evidence" || true
 
 set +e
 adb_target shell am instrument \
     -w \
     -r \
     -e class "$test_class" \
-    "${test_package}/${runner}" |
-    tee "$instrumentation_log"
-instrumentation_status=${PIPESTATUS:-}
+    "${test_package}/${runner}" \
+    > "$instrumentation_log" 2>&1
+instrumentation_status=$?
 set -e
 
-# POSIX sh has no PIPESTATUS. Re-run a cheap package/evidence check below and
-# treat the generated evidence file as the canonical success signal.
-(void_status=${instrumentation_status:-0}) >/dev/null 2>&1 || true
-
+cat "$instrumentation_log"
 adb_target logcat -d -v threadtime > "$logcat_file" || true
+
+if [ "$instrumentation_status" -ne 0 ]; then
+    printf 'ANDROID INSTRUMENTATION EXIT=%s\n' \
+        "$instrumentation_status" >&2
+    exit "$instrumentation_status"
+fi
 
 adb_target shell test -f "$remote_evidence" || {
     printf 'REMOTE EVIDENCE FILE MISSING: %s\n' "$remote_evidence" >&2
