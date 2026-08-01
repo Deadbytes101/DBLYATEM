@@ -83,9 +83,13 @@ int main(void)
         if (result != 42) return 16;
         if (db_linux_arm64_wx_release(platform, &handle, &audit) !=
             DB_LINUX_ARM64_WX_OK) return 17;
-        (void)write(STDOUT_FILENO,
-                    "NATIVE AARCH64 EXECUTION: PASS\n",
-                    sizeof("NATIVE AARCH64 EXECUTION: PASS\n") - 1u);
+        if (write(STDOUT_FILENO,
+                  "NATIVE AARCH64 EXECUTION: PASS\n",
+                  sizeof("NATIVE AARCH64 EXECUTION: PASS\n") - 1u) !=
+            (ssize_t)(sizeof(
+                "NATIVE AARCH64 EXECUTION: PASS\n") - 1u)) {
+            return 19;
+        }
         return 0;
     }
     return 18;

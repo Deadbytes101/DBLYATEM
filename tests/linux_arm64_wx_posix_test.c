@@ -311,8 +311,12 @@ int main(void)
         return 13;
     }
 
-    (void)write(STDOUT_FILENO,
-                "LINUX W^X PERMISSION OBSERVATION: PASS\n",
-                sizeof("LINUX W^X PERMISSION OBSERVATION: PASS\n") - 1u);
+    if (write(STDOUT_FILENO,
+              "LINUX W^X PERMISSION OBSERVATION: PASS\n",
+              sizeof("LINUX W^X PERMISSION OBSERVATION: PASS\n") - 1u) !=
+        (ssize_t)(sizeof(
+            "LINUX W^X PERMISSION OBSERVATION: PASS\n") - 1u)) {
+        return 14;
+    }
     return 0;
 }

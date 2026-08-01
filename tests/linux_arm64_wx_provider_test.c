@@ -434,6 +434,9 @@ int main(void)
     if (db_linux_arm64_wx_status_name(DB_LINUX_ARM64_WX_OK)[0] != 'o')
         return 14;
 
-    (void)write(STDOUT_FILENO, pass, sizeof(pass) - 1u);
+    if (write(STDOUT_FILENO, pass, sizeof(pass) - 1u) !=
+        (ssize_t)(sizeof(pass) - 1u)) {
+        return 15;
+    }
     return 0;
 }
