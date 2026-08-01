@@ -18,7 +18,8 @@ for verifier in \
     tools/verify-win32-kernel32-invoke.sh \
     tools/verify-win32-kernel32-gateway.sh \
     tools/verify-x64-decode.sh \
-    tools/verify-x64-ir-boundary.sh
+    tools/verify-x64-ir-boundary.sh \
+    tools/verify-x64-ir-lower.sh
 do
     grep -Fx "STANDALONE=$verifier" "$output" >/dev/null
 done
@@ -29,7 +30,7 @@ then
     exit 1
 fi
 
-sed '/STANDALONE=tools\/verify-x64-decode.sh/d' \
+sed '/STANDALONE=tools\/verify-x64-ir-lower.sh/d' \
     "$root/tools/verify-manifest.txt" > "$temporary/missing.txt"
 if DB_VERIFY_MANIFEST="$temporary/missing.txt" \
     "$root/tools/verify-all.sh" --contract >/dev/null 2>&1
@@ -48,7 +49,7 @@ then
 fi
 
 cat "$root/tools/verify-manifest.txt" > "$temporary/duplicate.txt"
-printf '%s\n' 'STANDALONE=tools/verify-x64-decode.sh' >> \
+printf '%s\n' 'STANDALONE=tools/verify-x64-ir-lower.sh' >> \
     "$temporary/duplicate.txt"
 if DB_VERIFY_MANIFEST="$temporary/duplicate.txt" \
     "$root/tools/verify-all.sh" --contract >/dev/null 2>&1
