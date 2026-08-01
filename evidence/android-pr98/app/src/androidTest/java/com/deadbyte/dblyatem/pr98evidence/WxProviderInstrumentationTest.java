@@ -47,6 +47,11 @@ public final class WxProviderInstrumentationTest {
             report.contains("COMPILE_ARCH=AARCH64")
         );
         assertTrue(
+            "runtime kernel is not AArch64",
+            report.contains("UNAME_MACHINE=aarch64") ||
+                report.contains("UNAME_MACHINE=arm64")
+        );
+        assertTrue(
             "mock failure and alias matrix failed",
             report.contains("PROVIDER_TEST_EXIT=0")
         );
