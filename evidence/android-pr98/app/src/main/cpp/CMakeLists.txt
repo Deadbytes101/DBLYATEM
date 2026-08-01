@@ -54,11 +54,14 @@ function(dblyatem_test_object target source renamed_main)
         ${target}
         PRIVATE
         "main=${renamed_main}"
+        "DBLYATEM_TEST_ENTRY=${renamed_main}"
     )
     target_compile_options(
         ${target}
         PRIVATE
         ${DBLYATEM_STRICT_OPTIONS}
+        -include
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_entry_prototype.h"
     )
     set_property(
         TARGET ${target}
