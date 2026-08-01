@@ -110,9 +110,36 @@ abi=$(adb_target shell getprop ro.product.cpu.abi |
     tr -d '\r')
 abi_list=$(adb_target shell getprop ro.product.cpu.abilist |
     tr -d '\r')
-page_size=$(adb_target shell sh -c \
-    'getconf PAGESIZE 2>/dev/null || getconf PAGE_SIZE 2>/dev/null || pagesize 2>/dev/null' |
-    tr -d '\r' || true)
+
+page_size=''
+
+for page_size_name in PAGESIZE PAGE_SIZE
+ do
+    page_size_candidate=$(adb_target shell getconf "$page_size_name" \
+        2>/dev/null |
+        tr -d '\r' |
+        sed -n '1p' || true)
+
+    case "$page_size_candidate" in
+        ''|*[!0-9]*) ;;
+        *)
+            page_size=$page_size_candidate
+            break
+            ;;
+    esac
+ done
+
+if [ -z "$page_size" ]; then
+    page_size_candidate=$(adb_target shell pagesize 2>/dev/null |
+        tr -d '\r' |
+        sed -n '1p' || true)
+
+    case "$page_size_candidate" in
+        ''|*[!0-9]*) ;;
+        *) page_size=$page_size_candidate ;;
+    esac
+fi
+
 qemu=$(adb_target shell getprop ro.kernel.qemu |
     tr -d '\r')
 boot_qemu=$(adb_target shell getprop ro.boot.qemu |
