@@ -52,6 +52,10 @@ public final class WxProviderInstrumentationTest {
                 report.contains("UNAME_MACHINE=arm64")
         );
         assertTrue(
+            "runtime page size must be 4096 for the 4100-byte two-page proof",
+            report.contains("RUNTIME_PAGE_SIZE=4096")
+        );
+        assertTrue(
             "mock failure and alias matrix failed",
             report.contains("PROVIDER_TEST_EXIT=0")
         );
