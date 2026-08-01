@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/utsname.h>
+#include <unistd.h>
 
 #ifndef DBLYATEM_EXPECTED_HEAD
 #error DBLYATEM_EXPECTED_HEAD must be defined
@@ -24,6 +25,7 @@ Java_com_deadbyte_dblyatem_pr98evidence_NativeBridge_runEvidence(
 {
     char report[2048];
     struct utsname host;
+    const long page_size = sysconf(_SC_PAGESIZE);
     const int provider_status = dblyatem_provider_test_main();
     const int posix_status = dblyatem_posix_test_main();
     const int execute_status = dblyatem_execute_test_main();
@@ -55,6 +57,7 @@ Java_com_deadbyte_dblyatem_pr98evidence_NativeBridge_runEvidence(
         "COMMIT_SHA=%s\n"
         "COMPILE_ARCH=%s\n"
         "UNAME_MACHINE=%s\n"
+        "RUNTIME_PAGE_SIZE=%ld\n"
         "PROVIDER_TEST_EXIT=%d\n"
         "POSIX_TEST_EXIT=%d\n"
         "EXECUTE_TEST_EXIT=%d\n"
@@ -64,6 +67,7 @@ Java_com_deadbyte_dblyatem_pr98evidence_NativeBridge_runEvidence(
         DBLYATEM_EXPECTED_HEAD,
         compile_arch,
         host.machine,
+        page_size,
         provider_status,
         posix_status,
         execute_status,
@@ -71,6 +75,7 @@ Java_com_deadbyte_dblyatem_pr98evidence_NativeBridge_runEvidence(
         provider_status == 0 &&
                 posix_status == 0 &&
                 execute_status == 0 &&
+                page_size == 4096 &&
                 strcmp(compile_arch, "AARCH64") == 0
             ? "PASS"
             : "FAIL",
