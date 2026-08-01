@@ -2,6 +2,7 @@
 set -eu
 
 expected_feature='8886fe231eaaefd9c28ed6fe9a7dc404739cc566'
+expected_challenge='0f9d66bc95e62d3c5fa1ae695ed9917605db48c31e24427667c9dd8d08391328'
 input=${1:-}
 
 fail()
@@ -125,6 +126,7 @@ accepted="$evidence/accepted.txt"
 for line in \
     'DBLYATEM_PR98_NATIVE_ARM64_LINUX_HOST_V1' \
     "COMMIT_SHA=$expected_feature" \
+    "EVIDENCE_CHALLENGE=$expected_challenge" \
     'HOST_ARCH=AARCH64' \
     'RUNTIME_PAGE_SIZE=4096' \
     'ANDROID=NO' \
@@ -143,6 +145,7 @@ machine_count=$(
 for line in \
     'DBLYATEM_PR98_NATIVE_ARM64_LINUX_EVIDENCE_ACCEPTED' \
     "HEAD=$expected_feature" \
+    "EVIDENCE_CHALLENGE=$expected_challenge" \
     'HOST_ARCH=AARCH64' \
     'RUNTIME_PAGE_SIZE=4096' \
     'ANDROID=NO' \
@@ -210,4 +213,5 @@ fi
 printf '%s\n' \
     'DBLYATEM PR98 NATIVE ARM64 LINUX PACKAGE VERIFY: PASS'
 printf 'HEAD=%s\n' "$expected_feature"
+printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
 printf 'EVIDENCE=%s\n' "$evidence"
