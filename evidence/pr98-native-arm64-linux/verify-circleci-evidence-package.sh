@@ -52,7 +52,7 @@ verify_evidence_directory()
     [ ! -L "$evidence" ] ||
         fail 'evidence directory must not be a symbolic link'
 
-    expected_files='accepted.txt cpuinfo.txt host.txt lscpu.txt SHA256SUMS step18.log'
+    expected_files='SHA256SUMS accepted.txt cpuinfo.txt host.txt lscpu.txt step18.log'
     actual_files=$(
         find "$evidence" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' |
             LC_ALL=C sort |
