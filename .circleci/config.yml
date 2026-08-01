@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   pr98-native-arm64-linux-evidence:
     machine:
-      image: arm-default
+      image: ubuntu-2204:current
     resource_class: arm.medium
     shell: /bin/bash -eo pipefail
     steps:
