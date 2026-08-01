@@ -18,18 +18,18 @@ BUILD CONTRACT
 
     AGP             9.2.0
     GRADLE          9.4.1
-    JDK             17
+    JDK             17 OR NEWER
     COMPILE SDK     36
     NDK             28.2.13676358
     CMAKE           3.22.1
     ABI             arm64-v8a ONLY
     MIN SDK         26
 
-The GitHub workflow checks out the harness and the exact PR #98 commit into
+The local WSL gate checks out the harness and the exact PR #98 commit into
 separate directories. CMake compiles the provider implementation and its three
 native test translation units directly from that exact checkout.
 
-The workflow only builds and uploads the physical-device kit:
+The build produces the physical-device kit:
 
     pr98-evidence-app.apk
     pr98-evidence-test.apk
@@ -73,11 +73,27 @@ RUNTIME CONTRACT
 Any NOT CLAIMED, FAIL, NOT_AARCH64, emulator marker, wrong SHA, wrong ABI, or
 wrong page size is a hard failure.
 
+REPORT STORAGE CONTRACT
+
+The instrumentation test writes its machine-readable report to the target
+application's internal files directory:
+
+    files/dblyatem-pr98-android-evidence.txt
+
+The physical runner retrieves that exact file through the debuggable app UID:
+
+    adb exec-out run-as com.deadbyte.dblyatem.pr98evidence \
+        cat files/dblyatem-pr98-android-evidence.txt
+
+The report does not depend on shell access to /sdcard/Android/data. This avoids
+Android 15 and vendor scoped-storage restrictions while retaining app-UID
+ownership and no-root operation.
+
 RUNNER
 
     evidence/android-pr98/run-physical-device.sh
 
-Usage from WSL after downloading and extracting the GitHub Actions artifact:
+Usage from WSL after building the kit:
 
     /bin/sh run-physical-device.sh \
         android-build-evidence/apks/pr98-evidence-app.apk \
@@ -98,9 +114,11 @@ The runner performs these observed steps:
     REJECT KNOWN EMULATOR PROPERTIES
     REMOVE OLD APP AND TEST PACKAGES
     INSTALL FRESH APK PAIR
-    DELETE ANY STALE REMOTE EVIDENCE FILE
+    VERIFY RUN-AS APP UID ACCESS
+    DELETE STALE INTERNAL REPORT
     RUN THE EXACT INSTRUMENTATION TEST
-    PULL THE MACHINE-READABLE EVIDENCE FILE
+    REQUIRE OK (1 test) AND COMPLETION CODE
+    RETRIEVE INTERNAL REPORT THROUGH RUN-AS
     VERIFY EVERY REQUIRED MARKER
     HASH ALL COLLECTED FILES
 
@@ -109,6 +127,7 @@ OUTPUT
     device.txt
     instrumentation.txt
     logcat.txt
+    retrieval-error.txt
     dblyatem-pr98-android-evidence.txt
     accepted.txt
     SHA256SUMS
