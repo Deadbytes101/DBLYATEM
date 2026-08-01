@@ -187,22 +187,32 @@ verify_evidence_directory()
 }
 
 [ -n "$input" ] ||
-    fail 'usage: verify-circleci-evidence-package.sh <circleci-artifact-root-directory>'
+    fail 'usage: verify-circleci-evidence-package.sh <artifact-root-or-tar.gz>'
 
 for command_name in \
-    awk basename cmp find grep mktemp rm sed sha256sum sort tar tr wc
+    awk basename cmp dirname find grep mktemp rm sed sha256sum sort tar tr wc
  do
     require_command "$command_name"
 done
 
-[ -d "$input" ] ||
-    fail "artifact root is not a directory: $input"
-[ ! -L "$input" ] ||
-    fail 'artifact root must not be a symbolic link'
+if [ -d "$input" ]; then
+    [ ! -L "$input" ] ||
+        fail 'artifact root must not be a symbolic link'
+    artifact_root=$(CDPATH= cd -- "$input" && pwd)
+    archive="$artifact_root/$archive_name"
+elif [ -f "$input" ]; then
+    [ ! -L "$input" ] ||
+        fail 'archive must not be a symbolic link'
+    input_name=$(basename "$input")
+    [ "$input_name" = "$archive_name" ] ||
+        fail "archive basename mismatch: expected=$archive_name actual=$input_name"
+    artifact_root=$(CDPATH= cd -- "$(dirname "$input")" && pwd)
+    archive="$artifact_root/$archive_name"
+else
+    fail "input not found: $input"
+fi
 
-artifact_root=$(CDPATH= cd -- "$input" && pwd)
 evidence="$artifact_root/$package_name"
-archive="$artifact_root/$archive_name"
 archive_checksum="$artifact_root/$archive_checksum_name"
 
 [ -f "$archive" ] ||
@@ -265,15 +275,23 @@ tar --no-same-owner --no-same-permissions \
     -C "$temp_root"
 
 extracted="$temp_root/$package_name"
-verify_evidence_directory "$evidence"
 verify_evidence_directory "$extracted"
 
-for compared_file in \
-    host.txt step18.log lscpu.txt cpuinfo.txt accepted.txt SHA256SUMS
- do
-    cmp -s "$evidence/$compared_file" "$extracted/$compared_file" ||
-        fail "directory/archive content mismatch: $compared_file"
-done
+published_directory_compare=NOT_PRESENT
+if [ -d "$evidence" ]; then
+    verify_evidence_directory "$evidence"
+
+    for compared_file in \
+        host.txt step18.log lscpu.txt cpuinfo.txt accepted.txt SHA256SUMS
+    do
+        cmp -s "$evidence/$compared_file" "$extracted/$compared_file" ||
+            fail "published directory/archive content mismatch: $compared_file"
+    done
+
+    published_directory_compare=PASS
+elif [ -e "$evidence" ]; then
+    fail 'published evidence path exists but is not a directory'
+fi
 
 archive_sha=$(sha256sum "$archive" | awk '{ print $1 }')
 
@@ -281,4 +299,5 @@ printf '%s\n' 'DBLYATEM PR98 CIRCLECI ARM64 LINUX PACKAGE VERIFY: PASS'
 printf 'FEATURE_HEAD=%s\n' "$expected_feature"
 printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
 printf 'ARCHIVE_SHA256=%s\n' "$archive_sha"
+printf 'PUBLISHED_DIRECTORY_COMPARE=%s\n' "$published_directory_compare"
 printf 'ARTIFACT_ROOT=%s\n' "$artifact_root"
