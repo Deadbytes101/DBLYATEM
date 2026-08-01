@@ -6,7 +6,7 @@ package='com.deadbyte.dblyatem.pr98evidence'
 test_package='com.deadbyte.dblyatem.pr98evidence.test'
 runner='androidx.test.runner.AndroidJUnitRunner'
 test_class='com.deadbyte.dblyatem.pr98evidence.WxProviderInstrumentationTest'
-remote_evidence="/sdcard/Android/data/${package}/files/dblyatem-pr98-android-evidence.txt"
+internal_evidence='files/dblyatem-pr98-android-evidence.txt'
 
 app_apk=${1:-}
 test_apk=${2:-}
@@ -46,6 +46,7 @@ instrumentation_log="$evidence_dir/instrumentation.txt"
 device_log="$evidence_dir/device.txt"
 local_evidence="$evidence_dir/dblyatem-pr98-android-evidence.txt"
 logcat_file="$evidence_dir/logcat.txt"
+retrieval_error="$evidence_dir/retrieval-error.txt"
 
 unzip -l "$app_apk" > "$app_entries"
 unzip -l "$test_apk" > "$test_entries"
@@ -194,7 +195,14 @@ adb_target uninstall "$package" >/dev/null 2>&1 || true
 
 adb_target install -r -t "$app_apk"
 adb_target install -r -t "$test_apk"
-adb_target shell rm -f "$remote_evidence" || true
+
+adb_target shell run-as "$package" id >/dev/null 2>&1 || {
+    printf '%s\n' 'RUN-AS APP UID ACCESS UNAVAILABLE' >&2
+    exit 78
+}
+
+adb_target shell run-as "$package" \
+    rm -f "$internal_evidence" >/dev/null 2>&1 || true
 
 set +e
 adb_target shell am instrument \
@@ -207,7 +215,7 @@ instrumentation_status=$?
 set -e
 
 cat "$instrumentation_log"
-adb_target logcat -d -v threadtime > "$logcat_file" || true
+adb_target logcat -d -v threadtime > "$logcat_file" 2>/dev/null || true
 
 if [ "$instrumentation_status" -ne 0 ]; then
     printf 'ANDROID INSTRUMENTATION EXIT=%s\n' \
@@ -215,12 +223,31 @@ if [ "$instrumentation_status" -ne 0 ]; then
     exit "$instrumentation_status"
 fi
 
-adb_target shell test -f "$remote_evidence" || {
-    printf 'REMOTE EVIDENCE FILE MISSING: %s\n' "$remote_evidence" >&2
-    exit 78
+grep -Fx 'OK (1 test)' "$instrumentation_log" >/dev/null || {
+    printf '%s\n' 'INSTRUMENTATION DID NOT REPORT OK (1 test)' >&2
+    exit 79
 }
 
-adb_target pull "$remote_evidence" "$local_evidence" >/dev/null
+grep -Fx 'INSTRUMENTATION_CODE: -1' \
+    "$instrumentation_log" >/dev/null || {
+        printf '%s\n' 'INSTRUMENTATION COMPLETION CODE MISSING' >&2
+        exit 80
+    }
+
+set +e
+adb_target exec-out run-as "$package" \
+    cat "$internal_evidence" \
+    > "$local_evidence" \
+    2> "$retrieval_error"
+retrieval_status=$?
+set -e
+
+if [ "$retrieval_status" -ne 0 ] || [ ! -s "$local_evidence" ]; then
+    printf 'INTERNAL EVIDENCE RETRIEVAL EXIT=%s\n' \
+        "$retrieval_status" >&2
+    cat "$retrieval_error" >&2 || true
+    exit 81
+fi
 
 require_line()
 {
@@ -234,26 +261,27 @@ require_line()
     }
 }
 
-require_line "COMMIT_SHA=$expected_head" 80
-require_line 'COMPILE_ARCH=AARCH64' 81
-require_line "UNAME_MACHINE=$kernel_machine" 82
-require_line 'RUNTIME_PAGE_SIZE=4096' 83
-require_line 'PROVIDER_TEST_EXIT=0' 84
-require_line 'POSIX_TEST_EXIT=0' 85
-require_line 'EXECUTE_TEST_EXIT=0' 86
-require_line 'NATIVE_AARCH64_EXECUTION=PASS' 87
-require_line 'ANDROID_ARM64_RUNTIME_EVIDENCE=PASS' 88
-require_line 'NO_RWX_TRANSITION_VERIFY=PASS' 89
+require_line 'DBLYATEM_PR98_ANDROID_EVIDENCE_V1' 82
+require_line "COMMIT_SHA=$expected_head" 83
+require_line 'COMPILE_ARCH=AARCH64' 84
+require_line "UNAME_MACHINE=$kernel_machine" 85
+require_line 'RUNTIME_PAGE_SIZE=4096' 86
+require_line 'PROVIDER_TEST_EXIT=0' 87
+require_line 'POSIX_TEST_EXIT=0' 88
+require_line 'EXECUTE_TEST_EXIT=0' 89
+require_line 'NATIVE_AARCH64_EXECUTION=PASS' 90
+require_line 'ANDROID_ARM64_RUNTIME_EVIDENCE=PASS' 91
+require_line 'NO_RWX_TRANSITION_VERIFY=PASS' 92
 
 if grep -F 'NOT CLAIMED' "$local_evidence" >/dev/null; then
     printf '%s\n' 'PHYSICAL DEVICE EVIDENCE CONTAINS NOT CLAIMED' >&2
-    exit 90
+    exit 93
 fi
 
 if grep -E '=(FAIL|NOT_AARCH64)$' "$local_evidence" >/dev/null; then
     printf '%s\n' 'PHYSICAL DEVICE EVIDENCE CONTAINS FAILURE' >&2
     cat "$local_evidence" >&2
-    exit 91
+    exit 94
 fi
 
 {
@@ -263,6 +291,10 @@ fi
     printf 'ABI=%s\n' "$abi"
     printf 'PAGE_SIZE=%s\n' "$page_size"
     printf 'DEVICE_SERIAL_SHA256=%s\n' "$serial_hash"
+    printf '%s\n' 'DEVICE_CLASS=PHYSICAL'
+    printf '%s\n' 'INSTRUMENTATION_RESULT=PASS'
+    printf '%s\n' 'REPORT_RETRIEVAL=PASS'
+    printf '%s\n' 'ANDROID_RUNTIME=PASS'
 } > "$evidence_dir/accepted.txt"
 
 find "$evidence_dir" \
