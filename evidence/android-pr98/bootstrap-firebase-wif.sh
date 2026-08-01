@@ -118,8 +118,8 @@ then
 fi
 
 workflow_ref="${repo}/${workflow_path}@refs/heads/${evidence_branch}"
-attribute_condition="assertion.repository_id=='${repo_id}' && assertion.repository_owner_id=='${owner_id}' && assertion.environment=='${environment_name}' && assertion.job_workflow_ref=='${workflow_ref}'"
-attribute_mapping='google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id,attribute.environment=assertion.environment,attribute.job_workflow_ref=assertion.job_workflow_ref'
+attribute_condition="assertion.repository_id=='${repo_id}' && assertion.repository_owner_id=='${owner_id}' && assertion.environment=='${environment_name}' && assertion.workflow_ref=='${workflow_ref}'"
+attribute_mapping='google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id,attribute.environment=assertion.environment,attribute.workflow_ref=assertion.workflow_ref'
 
 if ! gcloud iam workload-identity-pools providers describe \
         "$provider_id" \
