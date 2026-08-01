@@ -22,6 +22,8 @@ import java.util.Arrays;
 @RunWith(AndroidJUnit4.class)
 public final class WxProviderInstrumentationTest {
     private static final String TAG = "DBLYATEM_PR98";
+    private static final String EVIDENCE_FILE_NAME =
+        "dblyatem-pr98-android-evidence.txt";
     private static final String EXPECTED_HEAD =
         "8886fe231eaaefd9c28ed6fe9a7dc404739cc566";
 
@@ -84,14 +86,14 @@ public final class WxProviderInstrumentationTest {
             report.contains("NOT CLAIMED")
         );
 
-        File evidenceDir = context.getExternalFilesDir(null);
+        File evidenceDir = context.getFilesDir();
         assertTrue(
-            "external evidence directory unavailable",
+            "internal evidence directory unavailable",
             evidenceDir != null && evidenceDir.isDirectory()
         );
 
         File evidenceFile =
-            new File(evidenceDir, "dblyatem-pr98-android-evidence.txt");
+            new File(evidenceDir, EVIDENCE_FILE_NAME);
 
         try (FileOutputStream output =
                  new FileOutputStream(evidenceFile, false)) {
