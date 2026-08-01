@@ -21,7 +21,10 @@ bucket=${bucket#gs://}
 bucket=${bucket%/}
 service_account="${service_account_id}@${project_id}.iam.gserviceaccount.com"
 
-for command_name in gcloud gh python3
+temporary_directory=$(mktemp -d)
+trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
+
+for command_name in gcloud gh python3 curl
  do
     command -v "$command_name" >/dev/null 2>&1 || {
         printf 'MISSING COMMAND: %s\n' "$command_name" >&2
@@ -51,6 +54,21 @@ gcloud projects describe "$project_id" >/dev/null
 
 gcloud config set project "$project_id" >/dev/null
 
+billing_enabled=$(gcloud billing projects describe \
+    "$project_id" \
+    --format='value(billingEnabled)')
+
+case "$billing_enabled" in
+    True|true)
+        ;;
+    *)
+        printf 'CLOUD BILLING IS NOT ENABLED: %s\n' "$project_id" >&2
+        printf '%s\n' \
+            'LINK AN ACTIVE BILLING ACCOUNT BEFORE FIREBASE TEST LAB PROVISIONING' >&2
+        exit 94
+        ;;
+esac
+
 printf '%s\n' 'ENABLING REQUIRED GOOGLE CLOUD APIS'
 gcloud services enable \
     testing.googleapis.com \
@@ -62,7 +80,165 @@ gcloud services enable \
     serviceusage.googleapis.com \
     storage.googleapis.com \
     cloudresourcemanager.googleapis.com \
+    cloudbilling.googleapis.com \
     --project="$project_id"
+
+firebase_project_json="$temporary_directory/firebase-project.json"
+firebase_operation_json="$temporary_directory/firebase-operation.json"
+firebase_poll_json="$temporary_directory/firebase-poll.json"
+
+access_token=$(gcloud auth print-access-token)
+
+firebase_status=$(curl \
+    --silent \
+    --show-error \
+    --output "$firebase_project_json" \
+    --write-out '%{http_code}' \
+    --header "Authorization: Bearer ${access_token}" \
+    "https://firebase.googleapis.com/v1beta1/projects/${project_id}")
+
+case "$firebase_status" in
+    200)
+        FIREBASE_PROJECT_JSON="$firebase_project_json" \
+        EXPECTED_PROJECT_ID="$project_id" \
+        python3 - <<'PY'
+import json
+import os
+
+with open(os.environ["FIREBASE_PROJECT_JSON"], "r", encoding="utf-8") as handle:
+    project = json.load(handle)
+
+if project.get("projectId") != os.environ["EXPECTED_PROJECT_ID"]:
+    raise SystemExit("Firebase project ID mismatch")
+if project.get("state") not in (None, "ACTIVE"):
+    raise SystemExit(f"Firebase project is not active: {project.get('state')!r}")
+
+print("FIREBASE_PROJECT_ALREADY_ENABLED=YES")
+PY
+        ;;
+    404)
+        printf '%s\n' 'ADDING FIREBASE SERVICES TO GOOGLE CLOUD PROJECT'
+
+        access_token=$(gcloud auth print-access-token)
+        add_status=$(curl \
+            --silent \
+            --show-error \
+            --output "$firebase_operation_json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer ${access_token}" \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            "https://firebase.googleapis.com/v1beta1/projects/${project_id}:addFirebase")
+
+        case "$add_status" in
+            200|201)
+                ;;
+            *)
+                printf 'FIREBASE addFirebase HTTP STATUS=%s\n' "$add_status" >&2
+                cat "$firebase_operation_json" >&2
+                printf '%s\n' \
+                    'IF TERMS ARE NOT ACCEPTED, OPEN FIREBASE CONSOLE ONCE AND ACCEPT THEM' >&2
+                exit 95
+                ;;
+        esac
+
+        operation_name=$(FIREBASE_OPERATION_JSON="$firebase_operation_json" \
+            python3 - <<'PY'
+import json
+import os
+
+with open(os.environ["FIREBASE_OPERATION_JSON"], "r", encoding="utf-8") as handle:
+    operation = json.load(handle)
+
+name = operation.get("name")
+if not isinstance(name, str) or not name.startswith("operations/"):
+    raise SystemExit("Firebase addFirebase did not return an operation name")
+print(name)
+PY
+        )
+
+        firebase_ready=0
+        poll_attempt=0
+
+        while [ "$poll_attempt" -lt 60 ]
+        do
+            access_token=$(gcloud auth print-access-token)
+            poll_status=$(curl \
+                --silent \
+                --show-error \
+                --output "$firebase_poll_json" \
+                --write-out '%{http_code}' \
+                --header "Authorization: Bearer ${access_token}" \
+                "https://firebase.googleapis.com/v1beta1/${operation_name}")
+
+            if [ "$poll_status" != 200 ]; then
+                printf 'FIREBASE OPERATION HTTP STATUS=%s\n' "$poll_status" >&2
+                cat "$firebase_poll_json" >&2
+                exit 96
+            fi
+
+            poll_result=$(FIREBASE_POLL_JSON="$firebase_poll_json" \
+                EXPECTED_PROJECT_ID="$project_id" \
+                python3 - <<'PY'
+import json
+import os
+
+with open(os.environ["FIREBASE_POLL_JSON"], "r", encoding="utf-8") as handle:
+    operation = json.load(handle)
+
+if not operation.get("done", False):
+    print("PENDING")
+elif "error" in operation:
+    print("ERROR")
+else:
+    response = operation.get("response", {})
+    if response.get("projectId") != os.environ["EXPECTED_PROJECT_ID"]:
+        print("MISMATCH")
+    elif "FirebaseProject" not in str(response.get("@type", "")):
+        print("MISMATCH")
+    else:
+        print("READY")
+PY
+            )
+
+            case "$poll_result" in
+                READY)
+                    firebase_ready=1
+                    break
+                    ;;
+                ERROR|MISMATCH)
+                    cat "$firebase_poll_json" >&2
+                    exit 97
+                    ;;
+                PENDING)
+                    ;;
+                *)
+                    printf 'UNKNOWN FIREBASE OPERATION STATE=%s\n' \
+                        "$poll_result" >&2
+                    cat "$firebase_poll_json" >&2
+                    exit 98
+                    ;;
+            esac
+
+            poll_attempt=$((poll_attempt + 1))
+            sleep 5
+        done
+
+        if [ "$firebase_ready" -ne 1 ]; then
+            printf '%s\n' 'FIREBASE PROVISIONING DID NOT REACH READY STATE' >&2
+            cat "$firebase_poll_json" >&2
+            exit 99
+        fi
+
+        printf '%s\n' 'FIREBASE_PROJECT_ENABLED=YES'
+        ;;
+    *)
+        printf 'FIREBASE PROJECT GET HTTP STATUS=%s\n' "$firebase_status" >&2
+        cat "$firebase_project_json" >&2
+        exit 100
+        ;;
+esac
 
 if ! gcloud iam service-accounts describe \
         "$service_account" \
@@ -168,8 +344,7 @@ provider_name=$(gcloud iam workload-identity-pools providers describe \
     --workload-identity-pool="$pool_id" \
     --format='value(name)')
 
-environment_json=$(mktemp)
-trap 'rm -f "$environment_json"' EXIT HUP INT TERM
+environment_json="$temporary_directory/environment.json"
 
 python3 - "$environment_json" <<'PY'
 import json
@@ -235,6 +410,8 @@ fi
 printf '\n%s\n' 'DBLYATEM PR98 FIREBASE WIF BOOTSTRAP: PASS'
 printf 'PROJECT_ID=%s\n' "$project_id"
 printf 'PROJECT_NUMBER=%s\n' "$project_number"
+printf 'BILLING_ENABLED=%s\n' "$billing_enabled"
+printf 'FIREBASE_ENABLED=YES\n'
 printf 'SERVICE_ACCOUNT=%s\n' "$service_account"
 printf 'WORKLOAD_IDENTITY_PROVIDER=%s\n' "$provider_name"
 printf 'RESULTS_BUCKET=gs://%s\n' "$bucket"
