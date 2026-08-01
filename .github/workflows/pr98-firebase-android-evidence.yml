@@ -321,7 +321,10 @@ jobs:
               printf 'GITHUB_RUN_ID=%s\n' "$GITHUB_RUN_ID"
               printf 'GITHUB_RUN_ATTEMPT=%s\n' "$GITHUB_RUN_ATTEMPT"
           } > "$evidence/accepted.txt"
-          find "$evidence" -type f -print0 |
+          find "$evidence" \
+              -type f \
+              ! -name SHA256SUMS \
+              -print0 |
               sort -z |
               xargs -0 sha256sum > "$evidence/SHA256SUMS"
           cat "$evidence/accepted.txt"
