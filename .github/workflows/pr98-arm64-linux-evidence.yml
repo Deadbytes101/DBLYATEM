@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - deadbyte/pr98-arm64-evidence
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
