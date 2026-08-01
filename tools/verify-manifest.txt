@@ -12,3 +12,4 @@ STANDALONE=tools/verify-x64-ir-boundary.sh
 STANDALONE=tools/verify-x64-ir-lower.sh
 STANDALONE=tools/verify-arm64-select.sh
 STANDALONE=tools/verify-x64-arm64-plan.sh
+STANDALONE=tools/verify-x64-arm64-encode.sh
