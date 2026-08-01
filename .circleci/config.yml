@@ -11,15 +11,21 @@ jobs:
           name: Install strict native toolchain
           command: |
             set -euo pipefail
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends \
-              git \
-              gcc \
-              clang \
-              file \
-              util-linux \
-              coreutils \
-              tar
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                file \
+                util-linux \
+                coreutils \
+                tar
 
       - run:
           name: Execute exact DBLYATEM PR98 native ARM64 evidence
