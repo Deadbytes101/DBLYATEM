@@ -229,13 +229,12 @@ fi
 
 serial_hash=$(sed -n 's/^DEVICE_SERIAL_SHA256=//p' "$accepted")
 
-case "$serial_hash" in
-    [0-9a-f][0-9a-f]*) ;;
-    *)
-        printf '%s\n' 'DEVICE SERIAL SHA256 RECORD MISSING OR INVALID' >&2
-        exit 90
-        ;;
-esac
+if [ "${#serial_hash}" -ne 64 ] ||
+   ! printf '%s\n' "$serial_hash" | grep -Eq '^[0-9a-f]{64}$'
+then
+    printf '%s\n' 'DEVICE SERIAL SHA256 RECORD MISSING OR INVALID' >&2
+    exit 90
+fi
 
 {
     printf '%s\n' \
@@ -260,6 +259,7 @@ esac
         pr100-physical-android-evidence/accepted.txt \
         pr100-physical-android-evidence/dblyatem-pr98-android-evidence.txt \
         > SHA256SUMS
+    sha256sum -c SHA256SUMS
 )
 
 cat "$receipt"
