@@ -24,7 +24,7 @@ require_count()
 [ -n "$input" ] ||
     fail 'usage: verify-evidence-package.sh <directory-or-tar.gz>'
 
-for command_name in grep sha256sum tar mktemp find; do
+for command_name in grep sha256sum tar mktemp find awk wc; do
     command -v "$command_name" >/dev/null 2>&1 ||
         fail "missing command: $command_name"
 done
@@ -46,8 +46,28 @@ elif [ -f "$input" ]; then
         *) fail "unsupported package type: $input" ;;
     esac
 
+    archive_entries=$(tar -tzf "$input") ||
+        fail 'archive table-of-contents read failed'
+
+    printf '%s\n' "$archive_entries" |
+        awk '
+            /^\// { exit 1 }
+            /(^|\/)\.\.($|\/)/ { exit 1 }
+            { next }
+        ' ||
+        fail 'archive contains absolute or parent-traversal path'
+
+    tar -tvzf "$input" |
+        awk '
+            $1 ~ /^[lh]/ { exit 1 }
+            { next }
+        ' ||
+        fail 'archive contains a symbolic or hard link'
+
     temp_root=$(mktemp -d)
-    tar -xzf "$input" -C "$temp_root"
+    tar --no-same-owner --no-same-permissions \
+        -xzf "$input" \
+        -C "$temp_root"
 
     accepted_paths=$(
         find "$temp_root" -type f -name accepted.txt -print
@@ -71,6 +91,26 @@ for required_file in \
 do
     [ -f "$evidence/$required_file" ] ||
         fail "required file missing: $required_file"
+done
+
+checksum_line_count=$(
+    wc -l < "$evidence/SHA256SUMS" |
+        awk '{ print $1 }'
+)
+[ "$checksum_line_count" -eq 5 ] ||
+    fail "SHA256SUMS must contain exactly five lines: actual=$checksum_line_count"
+
+for checksum_name in \
+    host.txt step18.log lscpu.txt cpuinfo.txt accepted.txt
+do
+    checksum_count=$(
+        grep -Ec \
+            "^[0-9a-fA-F]{64}  ${checksum_name}$" \
+            "$evidence/SHA256SUMS" ||
+        true
+    )
+    [ "$checksum_count" -eq 1 ] ||
+        fail "SHA256SUMS entry contract failed: file=$checksum_name actual=$checksum_count"
 done
 
 (
