@@ -1,0 +1,198 @@
+name: PR98 ARM64 Linux Evidence
+
+on:
+  push:
+    branches:
+      - deadbyte/pr98-arm64-evidence
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  arm64-linux-evidence:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact PR98 feature head
+        uses: actions/checkout@v4
+        with:
+          ref: 8886fe231eaaefd9c28ed6fe9a7dc404739cc566
+          fetch-depth: 1
+
+      - name: Install strict toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc clang
+
+      - name: Run exact-head ARM64 Linux evidence gate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected='8886fe231eaaefd9c28ed6fe9a7dc404739cc566'
+          evidence="$RUNNER_TEMP/pr98-arm64-linux-evidence"
+          host="$evidence/host.txt"
+          log="$evidence/step18.log"
+
+          rm -rf "$evidence"
+          mkdir -p "$evidence"
+
+          head=$(git rev-parse HEAD)
+          machine=$(uname -m)
+          dirty=$(git status --porcelain --untracked-files=no)
+
+          if [ "$head" != "$expected" ]; then
+              printf 'EXPECTED=%s\n' "$expected"
+              printf 'ACTUAL=%s\n' "$head"
+              exit 90
+          fi
+
+          case "$machine" in
+              aarch64|arm64) ;;
+              *)
+                  printf 'NOT ARM64 LINUX: %s\n' "$machine"
+                  exit 91
+                  ;;
+          esac
+
+          if [ "${RUNNER_ARCH:-unknown}" != ARM64 ]; then
+              printf 'UNEXPECTED RUNNER_ARCH=%s\n' \
+                  "${RUNNER_ARCH:-unknown}"
+              exit 92
+          fi
+
+          if [ -n "$dirty" ]; then
+              printf '%s\n' 'EXACT-HEAD CHECKOUT IS DIRTY'
+              printf '%s\n' "$dirty"
+              exit 93
+          fi
+
+          if [ -x /system/bin/getprop ]; then
+              printf '%s\n' 'ANDROID DETECTED IN LINUX JOB'
+              exit 94
+          fi
+
+          operating_system=$(uname -o 2>/dev/null || printf '%s' unknown)
+          if [ "$operating_system" = Android ]; then
+              printf '%s\n' 'ANDROID DETECTED IN LINUX JOB'
+              exit 95
+          fi
+
+          {
+              printf '%s\n' 'DBLYATEM_PR98_GITHUB_ARM64_LINUX_V1'
+              printf 'COMMIT_SHA=%s\n' "$head"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNNER_ARCH=%s\n' "${RUNNER_ARCH:-unknown}"
+              printf 'RUNNER_OS=%s\n' "${RUNNER_OS:-unknown}"
+              printf 'UNAME=%s\n' "$(uname -a)"
+              printf 'GCC_VERSION=%s\n' "$(gcc --version | sed -n '1p')"
+              printf 'CLANG_VERSION=%s\n' "$(clang --version | sed -n '1p')"
+              printf '%s\n' 'ANDROID=NO'
+              printf '%s\n' 'FRESH_CHECKOUT_DIRTY=NO'
+              printf 'GITHUB_RUN_ID=%s\n' "$GITHUB_RUN_ID"
+              printf 'GITHUB_RUN_ATTEMPT=%s\n' "$GITHUB_RUN_ATTEMPT"
+          } > "$host"
+
+          lscpu > "$evidence/lscpu.txt"
+          cat /proc/cpuinfo > "$evidence/cpuinfo.txt"
+
+          set +e
+          /bin/sh tools/verify-linux-arm64-wx-provider.sh \
+              > "$log" 2>&1
+          status=$?
+          set -e
+
+          cat "$log"
+
+          if [ "$status" -ne 0 ]; then
+              printf 'ARM64 LINUX STEP18 EXIT=%s\n' "$status"
+              exit "$status"
+          fi
+
+          require_count()
+          {
+              line=$1
+              expected_count=$2
+              code=$3
+              actual_count=$(grep -Fxc "$line" "$log" || true)
+
+              if [ "$actual_count" -ne "$expected_count" ]; then
+                  printf 'LINE=%s\n' "$line"
+                  printf 'EXPECTED_COUNT=%s\n' "$expected_count"
+                  printf 'ACTUAL_COUNT=%s\n' "$actual_count"
+                  exit "$code"
+              fi
+          }
+
+          require_count \
+              'LINUX ARM64 W^X MOCK TEST: PASS' \
+              3 \
+              101
+
+          require_count \
+              'LINUX W^X PERMISSION OBSERVATION: PASS' \
+              2 \
+              102
+
+          require_count \
+              'NATIVE AARCH64 EXECUTION: PASS' \
+              1 \
+              103
+
+          require_count \
+              'ANDROID ARM64 RUNTIME EVIDENCE: NOT CLAIMED' \
+              1 \
+              104
+
+          require_count \
+              'NO RWX TRANSITION VERIFY: PASS' \
+              1 \
+              105
+
+          require_count \
+              'LINUX ANDROID ARM64 W^X PROVIDER VERIFY: PASS' \
+              1 \
+              106
+
+          if grep -Fx \
+              'NATIVE AARCH64 EXECUTION: NOT CLAIMED' \
+              "$log" >/dev/null
+          then
+              printf '%s\n' \
+                  'ARM64 RUNNER FALSELY LEFT EXECUTION UNCLAIMED'
+              exit 107
+          fi
+
+          if grep -Fx \
+              'ANDROID ARM64 RUNTIME EVIDENCE: PASS' \
+              "$log" >/dev/null
+          then
+              printf '%s\n' \
+                  'LINUX RUNNER FALSELY CLAIMED ANDROID'
+              exit 108
+          fi
+
+          sha256sum "$host" "$log" \
+              "$evidence/lscpu.txt" \
+              "$evidence/cpuinfo.txt" \
+              > "$evidence/SHA256SUMS"
+
+          printf '\n%s\n' \
+              'DBLYATEM PR98 GITHUB ARM64 LINUX EVIDENCE ACCEPTED'
+          printf 'HEAD=%s\n' "$head"
+          printf 'MACHINE=%s\n' "$machine"
+          printf 'RUNNER_ARCH=%s\n' "$RUNNER_ARCH"
+          printf 'EVIDENCE=%s\n' "$evidence"
+
+      - name: Upload ARM64 Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr98-arm64-linux-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/pr98-arm64-linux-evidence
+          if-no-files-found: error
+          retention-days: 30
