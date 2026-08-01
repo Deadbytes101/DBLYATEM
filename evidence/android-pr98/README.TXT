@@ -1,4 +1,4 @@
-DBLYATEM PR98 FIREBASE ANDROID EVIDENCE
+DBLYATEM PR98 PHYSICAL ANDROID EVIDENCE
 ======================================
 
 CLASSIFICATION
@@ -6,6 +6,7 @@ CLASSIFICATION
     EVIDENCE-ONLY ANDROID INSTRUMENTATION HARNESS.
     DO NOT MERGE THIS BRANCH INTO MAIN.
     DO NOT MODIFY PR #98 FEATURE HEAD THROUGH THIS PROJECT.
+    NO FIREBASE PROJECT, BILLING, OR PAID DEVICE LAB IS REQUIRED.
 
 EXACT FEATURE INPUT
 
@@ -28,82 +29,89 @@ The GitHub workflow checks out the harness and the exact PR #98 commit into
 separate directories. CMake compiles the provider implementation and its three
 native test translation units directly from that exact checkout.
 
-ANDROID TEST CONTRACT
+The workflow only builds and uploads the physical-device kit:
 
-    PROVIDER MOCK / FAILURE / ALIAS MATRIX EXIT 0
-    ONE-PAGE AND 4100-BYTE /proc/self/maps TEST EXIT 0
-    RUNTIME KERNEL aarch64 OR arm64
-    RUNTIME PAGE SIZE 4096
-    4100-BYTE IMAGE THEREFORE SPANS TWO PAGES
-    NATIVE AARCH64 CODE EXECUTION TEST EXIT 0
-    COMPILE ARCH AARCH64
-    NO NOT-CLAIMED MARKER
-    EVIDENCE FILE WRITTEN TO APP EXTERNAL FILES DIRECTORY
+    pr98-evidence-app.apk
+    pr98-evidence-test.apk
+    run-physical-device.sh
+    APK SHA256SUMS
+    APK entry inventories
 
-A 16K-page Android target is intentionally rejected for this evidence class.
-The exact PR #98 POSIX test uses a 4100-byte second image; only a 4096-byte page
-kernel makes that image cross a page boundary and therefore proves a complete
-two-page RW -> RX -> unmap transition.
+No cloud device matrix is started by the workflow.
 
-FIREBASE TEST LAB
+PHYSICAL DEVICE REQUIREMENTS
 
-The Firebase job is disabled until repository credentials and variables are
-configured. It targets an explicit catalog model and Android version, validates
-the selected model as physical and arm64-v8a capable, runs an instrumentation
-matrix through gcloud, and stores Test Lab results in a caller-owned bucket.
-Runtime instrumentation additionally rejects a device whose kernel page size is
-not 4096.
+    REAL ANDROID DEVICE CONNECTED THROUGH USB ADB
+    USB DEBUGGING AUTHORIZED
+    KERNEL MACHINE aarch64 OR arm64
+    ABI arm64-v8a
+    KERNEL PAGE SIZE 4096
+    NOT QEMU / RANCHU / GOLDFISH / CUTTLEFISH
+    NO ROOT REQUIRED
 
-WSL BOOTSTRAP
+A borrowed device is acceptable. The runner hashes the ADB serial before
+recording it and does not retain the raw serial in the evidence package.
 
-Run the bootstrap through /bin/sh from a trusted local WSL session:
+The 4096-byte page requirement is intentional. The exact PR #98 permission test
+uses a 4100-byte second image. On a 4096-byte page kernel that image spans two
+pages and proves the complete two-page RW -> RX -> unmap transition. A 16K-page
+device is rejected for this exact evidence class.
 
-    /bin/sh evidence/android-pr98/bootstrap-firebase-wif.sh
+RUNTIME CONTRACT
 
-Required input environment variables:
+    COMMIT_SHA=8886fe231eaaefd9c28ed6fe9a7dc404739cc566
+    COMPILE_ARCH=AARCH64
+    UNAME_MACHINE=aarch64 OR arm64
+    RUNTIME_PAGE_SIZE=4096
+    PROVIDER_TEST_EXIT=0
+    POSIX_TEST_EXIT=0
+    EXECUTE_TEST_EXIT=0
+    NATIVE_AARCH64_EXECUTION=PASS
+    ANDROID_ARM64_RUNTIME_EVIDENCE=PASS
+    NO_RWX_TRANSITION_VERIFY=PASS
 
-    GCP_PROJECT_ID
-    FIREBASE_TESTLAB_RESULTS_BUCKET
+Any NOT CLAIMED, FAIL, NOT_AARCH64, emulator marker, wrong SHA, wrong ABI, or
+wrong page size is a hard failure.
 
-Optional inputs:
+RUNNER
 
-    GCP_BUCKET_LOCATION
-    GCP_SERVICE_ACCOUNT_ID
-    GCP_WORKLOAD_IDENTITY_POOL_ID
-    GCP_WORKLOAD_IDENTITY_PROVIDER_ID
-    FIREBASE_TESTLAB_DEVICE_MODEL
-    FIREBASE_TESTLAB_ANDROID_VERSION
+    evidence/android-pr98/run-physical-device.sh
 
-The bootstrap does not start a Test Lab matrix. It enables required APIs,
-creates the dedicated service account and uniform-access result bucket, creates
-a Workload Identity Federation provider, and configures the protected GitHub
-Environment.
+Usage from WSL after downloading and extracting the GitHub Actions artifact:
 
-The OIDC provider is restricted by immutable repository ID, repository owner
-ID, environment name, and exact workflow reference:
+    /bin/sh run-physical-device.sh \
+        android-build-evidence/apks/pr98-evidence-app.apk \
+        android-build-evidence/apks/pr98-evidence-test.apk \
+        pr98-physical-android-evidence
 
-    REPOSITORY ID   1317635781
-    OWNER ID        184736772
-    ENVIRONMENT     pr98-firebase-testlab
-    WORKFLOW        .github/workflows/pr98-firebase-android-evidence.yml
-    BRANCH          deadbyte/pr98-firebase-android-evidence
+If more than one authorized device is attached, set:
 
-REQUIRED GITHUB SECRETS
+    ADB_SERIAL=DEVICE_SERIAL
 
-    GCP_WORKLOAD_IDENTITY_PROVIDER
-    GCP_SERVICE_ACCOUNT
+The runner performs these observed steps:
 
-REQUIRED GITHUB VARIABLES
+    VERIFY APK IS arm64-v8a ONLY
+    VERIFY EXACT PR #98 SHA EMBEDDED IN JNI LIBRARY
+    VERIFY ONE AUTHORIZED PHYSICAL DEVICE
+    VERIFY ARM64 KERNEL AND ABI
+    VERIFY 4096-BYTE KERNEL PAGES
+    REJECT KNOWN EMULATOR PROPERTIES
+    REMOVE OLD APP AND TEST PACKAGES
+    INSTALL FRESH APK PAIR
+    DELETE ANY STALE REMOTE EVIDENCE FILE
+    RUN THE EXACT INSTRUMENTATION TEST
+    PULL THE MACHINE-READABLE EVIDENCE FILE
+    VERIFY EVERY REQUIRED MARKER
+    HASH ALL COLLECTED FILES
 
-    GCP_PROJECT_ID
-    FIREBASE_TESTLAB_DEVICE_MODEL
-    FIREBASE_TESTLAB_ANDROID_VERSION
-    FIREBASE_TESTLAB_RESULTS_BUCKET
+OUTPUT
 
-REQUIRED GOOGLE CLOUD ROLES
+    device.txt
+    instrumentation.txt
+    logcat.txt
+    dblyatem-pr98-android-evidence.txt
+    accepted.txt
+    SHA256SUMS
 
-    roles/cloudtestservice.testAdmin
-    roles/firebase.analyticsViewer
-
-Use a dedicated Firebase project and a dedicated results bucket. The workflow
-uses Workload Identity Federation and does not require a long-lived JSON key.
+The evidence branch remains draft and must be closed after its APK build and
+physical-device evidence are attached to PR #98. It must never merge into main.
