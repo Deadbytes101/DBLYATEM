@@ -69,9 +69,9 @@ clang --target=aarch64-linux-gnu \
 
 actual=$(readelf -x .text "$build/reference.o" | awk '
 /^  0x/ {
-    for (index = 2; index <= NF; ++index) {
-        if (length($index) == 8 && $index ~ /^[0-9a-fA-F]+$/) {
-            printf "%s", tolower($index)
+    for (field = 2; field <= NF; ++field) {
+        if (length($field) == 8 && $field ~ /^[0-9a-fA-F]+$/) {
+            printf "%s", tolower($field)
         } else {
             break
         }
