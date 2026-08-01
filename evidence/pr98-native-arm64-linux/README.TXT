@@ -65,6 +65,10 @@ FILES
     verify-evidence-package.sh
         Verify the resulting directory or tar.gz package offline.
 
+    cloud-init-ubuntu.yaml
+        Provision and execute the evidence route automatically on a fresh
+        Ubuntu ARM64 VM.
+
 HOST USAGE
 ----------
 
@@ -93,6 +97,28 @@ Optional output path:
 
     ./run-native-arm64-linux-evidence.sh \
         "$HOME/pr98-native-arm64-linux-evidence"
+
+CLOUD-INIT USAGE
+----------------
+
+For a fresh Ubuntu ARM64 VM, provide this file as cloud-init user data:
+
+    cloud-init-ubuntu.yaml
+
+The cloud-init route pins the portable collector and verifier at:
+
+    b1688958f1993a5c885beb912f39fe7be5f64133
+
+It installs the required packages, executes the challenge-bound collector,
+verifies both the evidence directory and tar.gz archive, and writes:
+
+    /var/tmp/DBLYATEM-PR98-NATIVE-ARM64-STATUS.txt
+    /var/tmp/pr98-native-arm64-linux-evidence/
+    /var/tmp/pr98-native-arm64-linux-evidence.tar.gz
+    /var/tmp/pr98-native-arm64-linux-evidence.tar.gz.sha256
+
+The cloud-init file contains no private key, cloud credential, public IP,
+account identifier, or billing data.
 
 EXPECTED FINAL OUTPUT
 ---------------------
