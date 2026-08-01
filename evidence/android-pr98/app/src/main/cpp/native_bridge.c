@@ -30,6 +30,9 @@ Java_com_deadbyte_dblyatem_pr98evidence_NativeBridge_runEvidence(
     const int posix_status = dblyatem_posix_test_main();
     const int execute_status = dblyatem_execute_test_main();
     const char *compile_arch;
+    int runtime_arm64;
+    int native_execution_pass;
+    int android_runtime_pass;
     int length;
 
     (void)bridge_class;
@@ -49,6 +52,21 @@ Java_com_deadbyte_dblyatem_pr98evidence_NativeBridge_runEvidence(
 #else
     compile_arch = "NOT_AARCH64";
 #endif
+
+    runtime_arm64 =
+        strcmp(host.machine, "aarch64") == 0 ||
+        strcmp(host.machine, "arm64") == 0;
+
+    native_execution_pass =
+        execute_status == 0 &&
+        runtime_arm64 != 0 &&
+        strcmp(compile_arch, "AARCH64") == 0;
+
+    android_runtime_pass =
+        provider_status == 0 &&
+        posix_status == 0 &&
+        native_execution_pass != 0 &&
+        page_size == 4096;
 
     length = snprintf(
         report,
@@ -71,14 +89,8 @@ Java_com_deadbyte_dblyatem_pr98evidence_NativeBridge_runEvidence(
         provider_status,
         posix_status,
         execute_status,
-        execute_status == 0 ? "PASS" : "FAIL",
-        provider_status == 0 &&
-                posix_status == 0 &&
-                execute_status == 0 &&
-                page_size == 4096 &&
-                strcmp(compile_arch, "AARCH64") == 0
-            ? "PASS"
-            : "FAIL",
+        native_execution_pass != 0 ? "PASS" : "FAIL",
+        android_runtime_pass != 0 ? "PASS" : "FAIL",
         provider_status == 0 && posix_status == 0
             ? "PASS"
             : "FAIL"
