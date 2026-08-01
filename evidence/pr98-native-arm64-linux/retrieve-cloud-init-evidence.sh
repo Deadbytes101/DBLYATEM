@@ -57,7 +57,10 @@ if [ -n "$identity_file" ]; then
         fail 'identity file must not be a symbolic link'
 fi
 
-for command_name in ssh scp grep awk wc sha256sum mktemp dirname basename; do
+for command_name in \
+    ssh scp grep awk wc sha256sum mktemp dirname basename \
+    cat cp rm mkdir
+do
     require_command "$command_name"
 done
 
@@ -88,6 +91,15 @@ archive_checksum='$remote_archive_checksum'
 test -f "\$status"
 test -f "\$archive"
 test -f "\$archive_checksum"
+status_size=\$(wc -c < "\$status")
+archive_size=\$(wc -c < "\$archive")
+checksum_size=\$(wc -c < "\$archive_checksum")
+[ "\$status_size" -ge 1 ]
+[ "\$status_size" -le 65536 ]
+[ "\$archive_size" -ge 1 ]
+[ "\$archive_size" -le 104857600 ]
+[ "\$checksum_size" -ge 1 ]
+[ "\$checksum_size" -le 4096 ]
 grep -Fqx 'DBLYATEM_PR98_NATIVE_ARM64_CLOUD_INIT_V1' "\$status"
 grep -Fqx 'PORTABLE_KIT_HEAD=$expected_kit' "\$status"
 grep -Fqx 'FEATURE_HEAD=$expected_feature' "\$status"
@@ -186,6 +198,26 @@ status="$temp_root/$status_name"
 archive="$temp_root/$archive_name"
 archive_checksum="$temp_root/$archive_checksum_name"
 
+for downloaded_file in "$status" "$archive" "$archive_checksum"; do
+    [ -f "$downloaded_file" ] ||
+        fail "downloaded artifact is not a regular file: $(basename "$downloaded_file")"
+    [ ! -L "$downloaded_file" ] ||
+        fail "downloaded artifact is a symbolic link: $(basename "$downloaded_file")"
+done
+
+status_size=$(wc -c < "$status" | awk '{ print $1 }')
+archive_size=$(wc -c < "$archive" | awk '{ print $1 }')
+checksum_size=$(wc -c < "$archive_checksum" | awk '{ print $1 }')
+
+[ "$status_size" -ge 1 ] && [ "$status_size" -le 65536 ] ||
+    fail "downloaded status size outside 1..65536: actual=$status_size"
+
+[ "$archive_size" -ge 1 ] && [ "$archive_size" -le 104857600 ] ||
+    fail "downloaded archive size outside 1..104857600: actual=$archive_size"
+
+[ "$checksum_size" -ge 1 ] && [ "$checksum_size" -le 4096 ] ||
+    fail "downloaded checksum size outside 1..4096: actual=$checksum_size"
+
 for line in \
     'DBLYATEM_PR98_NATIVE_ARM64_CLOUD_INIT_V1' \
     "PORTABLE_KIT_HEAD=$expected_kit" \
@@ -245,6 +277,7 @@ retrieval="$destination/retrieval.txt"
     printf 'SSH_PORT=%s\n' "$port"
     printf 'REMOTE_STATUS_SHA256=%s\n' "$status_hash"
     printf 'ARCHIVE_SHA256=%s\n' "$archive_hash"
+    printf 'ARCHIVE_BYTES=%s\n' "$archive_size"
     printf '%s\n' 'STRICT_HOST_KEY_CHECKING=PASS'
     printf '%s\n' 'REMOTE_PRECHECK=PASS'
     printf '%s\n' 'REMOTE_ARCHIVE_SHA256=PASS'
