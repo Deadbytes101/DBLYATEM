@@ -1,3 +1,4 @@
+# Deterministic evidence rerun trigger: 2026-08-02 exact feature head 8886fe231eaaefd9c28ed6fe9a7dc404739cc566
 name: PR98 ARM64 Linux Evidence
 
 on:
