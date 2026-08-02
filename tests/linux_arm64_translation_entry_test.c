@@ -80,7 +80,7 @@ static int test_validation(void)
     CHECK(same_bytes(&audit, &audit_before, sizeof(audit)));
 
     CHECK(db_linux_arm64_translation_enter(
-              UINT64_C(0x0000800000000000),
+              UINT64_C(0x0001000000000000),
               &state, &context, &audit) ==
           DB_LINUX_ARM64_TRANSLATION_ENTRY_BAD_ENTRY_ADDRESS);
     CHECK(same_bytes(&context, &context_before, sizeof(context)));
@@ -88,8 +88,10 @@ static int test_validation(void)
 
     context.format_version += 1u;
     CHECK(db_linux_arm64_translation_enter(
-              UINT64_C(0x1000), &state, &context, &audit) ==
+              UINT64_C(0x0000ffff00000000),
+              &state, &context, &audit) ==
           DB_LINUX_ARM64_TRANSLATION_ENTRY_BAD_CONTEXT);
+    CHECK(same_bytes(&audit, &audit_before, sizeof(audit)));
     context = context_before;
 
     context.reserved[0] = 1u;
