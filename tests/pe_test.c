@@ -1,8 +1,37 @@
 #include "dblyat/pe.h"
+
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <unistd.h>
+
 #define TEST_IMAGE_SIZE 0x400u
+
+static int write_all(int descriptor, const char *text, size_t size)
+{
+    size_t offset = 0u;
+
+    while (offset < size) {
+        const ssize_t written = write(descriptor, text + offset, size - offset);
+
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+
+            return 0;
+        }
+
+        if (written == 0) {
+            return 0;
+        }
+
+        offset += (size_t)written;
+    }
+
+    return 1;
+}
+
 static void put_u16(uint8_t *bytes, size_t offset, uint16_t value)
 {
     bytes[offset] = (uint8_t)(value & 0xffu);
@@ -88,7 +117,10 @@ static int expect_status(const char *name,
         return 0;
     }
 
-    (void)write(STDERR_FILENO, name, 1u);
+    if (!write_all(STDERR_FILENO, name, 1u)) {
+        return 1;
+    }
+
     return 1;
 }
 
@@ -129,10 +161,20 @@ int main(void)
     failures += expect_status("offset", image, sizeof(image), DB_PE_BAD_PE_OFFSET);
 
     if (failures != 0) {
-        (void)write(STDERR_FILENO, "PE TEST: FAIL\n", 14u);
+        if (!write_all(STDERR_FILENO,
+                       "PE TEST: FAIL\n",
+                       sizeof("PE TEST: FAIL\n") - 1u)) {
+            return 2;
+        }
+
         return 1;
     }
 
-    (void)write(STDOUT_FILENO, "PE TEST: PASS\n", 14u);
+    if (!write_all(STDOUT_FILENO,
+                   "PE TEST: PASS\n",
+                   sizeof("PE TEST: PASS\n") - 1u)) {
+        return 2;
+    }
+
     return 0;
 }

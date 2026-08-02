@@ -11,6 +11,9 @@ DB_VERIFY_MANIFEST="$root/tools/verify-manifest.txt" \
 
 grep -Fx 'VERIFY ALL CONTRACT: PASS' "$output" >/dev/null
 grep -Fx 'FULL_TREE=GNUmakefile' "$output" >/dev/null
+grep -Fx \
+    'TEST_COMPILER_CONTRACT=tools/test-compiler-contract.sh' \
+    "$output" >/dev/null
 
 for verifier in \
     tools/verify-win32-provider.sh \
@@ -70,6 +73,195 @@ if DB_VERIFY_MANIFEST="$temporary/bad-targets.txt" \
     "$root/tools/verify-all.sh" --contract >/dev/null 2>&1
 then
     printf '%s\n' 'VERIFY ALL CONTRACT TEST: bad target sequence accepted' >&2
+    exit 1
+fi
+
+fake_compiler="$temporary/fake-compiler"
+cat > "$fake_compiler" <<'FAKE_COMPILER'
+#!/bin/sh
+set -eu
+: "${DB_TEST_CAPTURE:?missing DB_TEST_CAPTURE}"
+printf '%s\n' "$@" > "$DB_TEST_CAPTURE"
+FAKE_COMPILER
+chmod 700 "$fake_compiler"
+
+wrapper_directory="$temporary/wrappers"
+mkdir -p "$wrapper_directory"
+cp "$root/tools/test-compiler-contract.sh" "$wrapper_directory/gcc"
+cp "$root/tools/test-compiler-contract.sh" "$wrapper_directory/clang"
+cp "$root/tools/test-compiler-contract.sh" "$wrapper_directory/cc"
+chmod 700 \
+    "$wrapper_directory/gcc" \
+    "$wrapper_directory/clang" \
+    "$wrapper_directory/cc"
+
+contract_header="$root/tests/test_write_contract.h"
+
+relative_capture="$temporary/relative.args"
+DB_TEST_REAL_GCC="$fake_compiler" \
+DB_TEST_REAL_CLANG="$fake_compiler" \
+DB_TEST_ROOT="$root" \
+DB_TEST_WRITE_CONTRACT="$contract_header" \
+DB_TEST_CAPTURE="$relative_capture" \
+    "$wrapper_directory/gcc" \
+        -Iinclude tests/probe_test.c src/probe.c
+
+{
+    printf '%s\n' '-include'
+    printf '%s\n' "$contract_header"
+    printf '%s\n' '-Iinclude'
+    printf '%s\n' 'tests/probe_test.c'
+    printf '%s\n' 'src/probe.c'
+} > "$temporary/relative.expected"
+
+cmp -s "$temporary/relative.expected" "$relative_capture" || {
+    printf '%s\n' \
+        'VERIFY ALL CONTRACT TEST: relative test source was not wrapped' >&2
+    exit 1
+}
+
+absolute_capture="$temporary/absolute.args"
+DB_TEST_REAL_GCC="$fake_compiler" \
+DB_TEST_REAL_CLANG="$fake_compiler" \
+DB_TEST_ROOT="$root" \
+DB_TEST_WRITE_CONTRACT="$contract_header" \
+DB_TEST_CAPTURE="$absolute_capture" \
+    "$wrapper_directory/clang" \
+        --analyze "$root/tests/probe_test.c" src/probe.c
+
+{
+    printf '%s\n' '-include'
+    printf '%s\n' "$contract_header"
+    printf '%s\n' '--analyze'
+    printf '%s\n' "$root/tests/probe_test.c"
+    printf '%s\n' 'src/probe.c'
+} > "$temporary/absolute.expected"
+
+cmp -s "$temporary/absolute.expected" "$absolute_capture" || {
+    printf '%s\n' \
+        'VERIFY ALL CONTRACT TEST: absolute test source was not wrapped' >&2
+    exit 1
+}
+
+production_capture="$temporary/production.args"
+DB_TEST_REAL_GCC="$fake_compiler" \
+DB_TEST_REAL_CLANG="$fake_compiler" \
+DB_TEST_ROOT="$root" \
+DB_TEST_WRITE_CONTRACT="$contract_header" \
+DB_TEST_CAPTURE="$production_capture" \
+    "$wrapper_directory/clang" \
+        --target=aarch64-linux-gnu -c reference.s
+
+{
+    printf '%s\n' '--target=aarch64-linux-gnu'
+    printf '%s\n' '-c'
+    printf '%s\n' 'reference.s'
+} > "$temporary/production.expected"
+
+cmp -s "$temporary/production.expected" "$production_capture" || {
+    printf '%s\n' \
+        'VERIFY ALL CONTRACT TEST: production compiler call was modified' >&2
+    exit 1
+}
+
+probe_root="$temporary/probe-project"
+mkdir -p "$probe_root/tests"
+cat > "$probe_root/tests/compiler_contract_probe_test.c" <<'PROBE_SOURCE'
+#include <unistd.h>
+
+int main(void)
+{
+    (void)write(STDOUT_FILENO, "", 0u);
+    return 0;
+}
+PROBE_SOURCE
+
+cat > "$probe_root/tests/feature_macro_probe_test.c" <<'FEATURE_PROBE_SOURCE'
+#include <sys/mman.h>
+
+#ifndef MAP_ANONYMOUS
+#error MAP_ANONYMOUS must remain visible after the forced test header
+#endif
+
+int main(void)
+{
+    (void)MAP_ANONYMOUS;
+    return 0;
+}
+FEATURE_PROBE_SOURCE
+
+real_gcc=$(command -v gcc)
+real_clang=$(command -v clang)
+
+(
+    cd "$probe_root"
+    DB_TEST_REAL_GCC="$real_gcc" \
+    DB_TEST_REAL_CLANG="$real_clang" \
+    DB_TEST_ROOT="$probe_root" \
+    DB_TEST_WRITE_CONTRACT="$contract_header" \
+        "$wrapper_directory/gcc" \
+            -std=c11 -O2 \
+            -Wall -Wextra -Wpedantic -Werror \
+            -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+            tests/compiler_contract_probe_test.c \
+            -o "$temporary/gcc-contract-probe"
+)
+"$temporary/gcc-contract-probe" >/dev/null
+
+(
+    cd "$probe_root"
+    DB_TEST_REAL_GCC="$real_gcc" \
+    DB_TEST_REAL_CLANG="$real_clang" \
+    DB_TEST_ROOT="$probe_root" \
+    DB_TEST_WRITE_CONTRACT="$contract_header" \
+        "$wrapper_directory/clang" \
+            -std=c11 -O2 \
+            -Wall -Wextra -Wpedantic -Werror \
+            -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+            tests/compiler_contract_probe_test.c \
+            -o "$temporary/clang-contract-probe"
+)
+"$temporary/clang-contract-probe" >/dev/null
+
+(
+    cd "$probe_root"
+    DB_TEST_REAL_GCC="$real_gcc" \
+    DB_TEST_REAL_CLANG="$real_clang" \
+    DB_TEST_ROOT="$probe_root" \
+    DB_TEST_WRITE_CONTRACT="$contract_header" \
+        "$wrapper_directory/gcc" \
+            -std=c11 -O2 \
+            -Wall -Wextra -Wpedantic -Werror \
+            -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+            tests/feature_macro_probe_test.c \
+            -o "$temporary/gcc-feature-macro-probe"
+)
+"$temporary/gcc-feature-macro-probe"
+
+(
+    cd "$probe_root"
+    DB_TEST_REAL_GCC="$real_gcc" \
+    DB_TEST_REAL_CLANG="$real_clang" \
+    DB_TEST_ROOT="$probe_root" \
+    DB_TEST_WRITE_CONTRACT="$contract_header" \
+        "$wrapper_directory/clang" \
+            -std=c11 -O2 \
+            -Wall -Wextra -Wpedantic -Werror \
+            -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+            tests/feature_macro_probe_test.c \
+            -o "$temporary/clang-feature-macro-probe"
+)
+"$temporary/clang-feature-macro-probe"
+
+if DB_TEST_REAL_GCC="$fake_compiler" \
+   DB_TEST_REAL_CLANG="$fake_compiler" \
+   DB_TEST_ROOT="$root" \
+   DB_TEST_WRITE_CONTRACT="$contract_header" \
+   DB_TEST_CAPTURE="$temporary/unsupported.args" \
+       "$wrapper_directory/cc" tests/probe_test.c >/dev/null 2>&1
+then
+    printf '%s\n' \
+        'VERIFY ALL CONTRACT TEST: unsupported compiler name accepted' >&2
     exit 1
 fi
 
