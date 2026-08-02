@@ -84,6 +84,11 @@ if [ "$is_android" -eq 1 ]; then
         -o "$build/android-arm64-published-block-test"
     "$build/android-arm64-published-block-test"
 
+    "$compiler" $common tests/arm64_published_block_enum_test.c \
+        $published_sources \
+        -o "$build/android-arm64-published-block-enum-test"
+    "$build/android-arm64-published-block-enum-test"
+
     printf '%s\n' 'ANDROID ARM64 RUNTIME EVIDENCE: PASS'
 else
     for command_name in gcc clang; do
@@ -142,6 +147,25 @@ else
         -Wall -Wextra -Wpedantic -Werror \
         $published_sources tests/arm64_published_block_test.c
 
+    gcc $common tests/arm64_published_block_enum_test.c $published_sources \
+        -o "$build/gcc-arm64-published-block-enum-test"
+    "$build/gcc-arm64-published-block-enum-test"
+
+    clang $common tests/arm64_published_block_enum_test.c $published_sources \
+        -o "$build/clang-arm64-published-block-enum-test"
+    "$build/clang-arm64-published-block-enum-test"
+
+    gcc -Iinclude -std=c11 -O1 -g \
+        -Wall -Wextra -Wpedantic -Werror \
+        -fsanitize=address,undefined -fno-omit-frame-pointer \
+        tests/arm64_published_block_enum_test.c $published_sources \
+        -o "$build/arm64-published-block-enum-sanitizer-test"
+    "$build/arm64-published-block-enum-sanitizer-test"
+
+    clang --analyze -Iinclude -std=c11 \
+        -Wall -Wextra -Wpedantic -Werror \
+        $published_sources tests/arm64_published_block_enum_test.c
+
     case "$machine" in
         aarch64|arm64)
             gcc $common tests/linux_arm64_wx_execute_test.c $posix_sources \
@@ -157,6 +181,7 @@ else
 fi
 
 printf '%s\n' 'ARM64 PUBLISHED BLOCK VERIFY: PASS'
+printf '%s\n' 'ARM64 PUBLISHED BLOCK ENUM VERIFY: PASS'
 printf '%s\n' 'ARM64 CODE CACHE METADATA BOUNDARY: PASS'
 printf '%s\n' 'NO RWX TRANSITION VERIFY: PASS'
 printf '%s\n' 'LINUX ANDROID ARM64 W^X PROVIDER VERIFY: PASS'
