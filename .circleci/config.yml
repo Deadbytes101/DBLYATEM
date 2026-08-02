@@ -1,0 +1,310 @@
+version: 2.1
+
+parameters:
+  run_pr118_android_device_manifest_r1:
+    type: boolean
+    default: false
+
+jobs:
+  pr118-android-device-manifest-r1:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+            sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+              apt-get update
+            sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git gcc clang make file binutils util-linux coreutils \
+                grep sed findutils gawk tar
+
+      - run:
+          name: Verify exact PR118 Android device manifest on native ARM64
+          command: |
+            set -euo pipefail
+
+            repository='https://github.com/Deadbytes101/DBLYATEM.git'
+            expected_branch='deadbyte/pr118-android-device-manifest-r1'
+            expected_feature='9cadb292da214ec2e655b3246e37e4e4e431a7d8'
+            expected_config="${CIRCLE_SHA1}"
+            expected_challenge='0904d434b9b53d7fb8daedb20e82bd00ecf89c0e73c50c29f9d0260f0e173440'
+
+            checkout='/tmp/dblyatem-pr118-r1-checkout'
+            output='/tmp/dblyatem-pr118-android-device-manifest-r1-output'
+            artifacts='/tmp/dblyatem-pr118-android-device-manifest-r1-artifacts'
+            archive="$artifacts/pr118-android-device-manifest-r1.tar.gz"
+
+            rm -rf "$checkout" "$output" "$artifacts"
+            mkdir -p "$checkout" "$output" "$artifacts"
+
+            [ "${CIRCLE_BRANCH:-}" = "$expected_branch" ] || {
+              printf 'BRANCH MISMATCH expected=%s actual=%s\n' \
+                "$expected_branch" "${CIRCLE_BRANCH:-missing}" >&2
+              exit 1
+            }
+
+            machine=$(uname -m)
+            case "$machine" in
+              aarch64|arm64) ;;
+              *) printf 'HOST ARCH REJECTED: %s\n' "$machine" >&2; exit 1 ;;
+            esac
+
+            page_size=$(getconf PAGESIZE)
+            [ "$page_size" = '4096' ] || {
+              printf 'PAGE SIZE REJECTED: %s\n' "$page_size" >&2
+              exit 1
+            }
+
+            shell_identity=$(file -L /bin/sh)
+            printf '%s\n' "$shell_identity" |
+              grep -Eiq 'aarch64|ARM aarch64' || {
+                printf 'NON-AARCH64 USERSPACE REJECTED: %s\n' \
+                  "$shell_identity" >&2
+                exit 1
+              }
+
+            virtualization=$(systemd-detect-virt 2>/dev/null || true)
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'EMULATED HOST REJECTED: %s\n' "$virtualization" >&2
+                exit 1
+                ;;
+            esac
+
+            git init "$checkout"
+            git -C "$checkout" remote add origin "$repository"
+            git -C "$checkout" fetch --depth=1 origin "$expected_feature"
+            git -C "$checkout" checkout --detach FETCH_HEAD
+
+            observed_feature=$(git -C "$checkout" rev-parse HEAD)
+            [ "$observed_feature" = "$expected_feature" ] || {
+              printf 'FEATURE HEAD MISMATCH expected=%s actual=%s\n' \
+                "$expected_feature" "$observed_feature" >&2
+              exit 1
+            }
+
+            tracked_dirty=$(git -C "$checkout" status --porcelain --untracked-files=no)
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'FRESH CHECKOUT TRACKED DIRTY' >&2
+              exit 1
+            }
+
+            for verifier in \
+              tools/capture-android-device-manifest.sh \
+              tools/verify-android-device-manifest.sh
+            do
+              mode_line=$(git -C "$checkout" ls-files -s "$verifier")
+              printf '%s\n' "$mode_line" | grep -Eq '^100755 ' || {
+                printf 'SCRIPT MODE REJECTED file=%s mode=%s\n' \
+                  "$verifier" "$mode_line" >&2
+                exit 1
+              }
+            done
+
+            capture="$checkout/tools/capture-android-device-manifest.sh"
+            verifier="$checkout/tools/verify-android-device-manifest.sh"
+            template="$checkout/benchmarks/android-device/android-device-manifest-v1.txt"
+            readme="$checkout/benchmarks/android-device/README.TXT"
+            verify_manifest="$checkout/tools/verify-manifest.txt"
+
+            grep -Fq 'CAPTURE_TRANSPORT=ADB_READ_ONLY' "$template"
+            grep -Fq 'RAW_SERIAL_PERSISTED=NO' "$template"
+            grep -Fq 'DEVICE_MUTATION=NONE' "$template"
+            grep -Fq 'DBLYATEM_EXECUTION=NOT_RUN' "$template"
+            grep -Fq 'WINLATOR_EXECUTION=NOT_RUN' "$template"
+            grep -Fq 'WINLATOR_COMPARISON=NOT_RUN' "$template"
+            grep -Fq 'mv -T "$stage" "$output"' "$capture"
+            grep -Fq 'redact_serial "$serial"' "$capture"
+            grep -Fq 'STANDALONE=tools/verify-android-device-manifest.sh' \
+              "$verify_manifest"
+            grep -Fq 'same physical Android device' "$readme"
+
+            if grep -E '(^|[^A-Za-z])(install|push|pull|root|remount|reboot)([^A-Za-z]|$)' \
+              "$capture" >/dev/null
+            then
+              printf '%s\n' 'MUTATING ADB COMMAND FOUND' >&2
+              exit 1
+            fi
+
+            {
+              printf 'DBLYATEM_PR118_ANDROID_DEVICE_MANIFEST_R1_SOURCE_CONTRACT\n'
+              printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf 'CAPTURE_TRANSPORT=ADB_READ_ONLY\n'
+              printf 'RAW_SERIAL_PERSISTED=NO\n'
+              printf 'DEVICE_MUTATION=NONE\n'
+              printf 'PHYSICAL_ANDROID_CAPTURE=NOT_RUN\n'
+              printf 'DBLYATEM_EXECUTION=NOT_RUN\n'
+              printf 'WINLATOR_EXECUTION=NOT_RUN\n'
+              printf 'WINLATOR_COMPARISON=NOT_RUN\n'
+            } > "$output/source-contract.txt"
+
+            set +e
+            (
+              cd "$checkout"
+              /bin/sh tools/verify-all.sh
+            ) > "$output/verify-all.stdout.log" 2>&1
+            verify_status=$?
+            set -e
+
+            if [ -d "$checkout/build/verify-all" ]; then
+              cp -R "$checkout/build/verify-all" "$output/verify-all"
+            fi
+
+            {
+              printf 'DBLYATEM_PR118_ANDROID_DEVICE_MANIFEST_R1_HOST\n'
+              printf 'FEATURE_HEAD=%s\n' "$observed_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf 'VIRTUALIZATION=%s\n' "${virtualization:-none}"
+              printf 'FRESH_CHECKOUT_DIRTY=NO\n'
+            } > "$output/host.txt"
+
+            if [ "$verify_status" -ne 0 ]; then
+              cp "$output/verify-all.stdout.log" \
+                "$artifacts/verify-all.failed.log"
+              if [ -d "$output/verify-all" ]; then
+                cp -R "$output/verify-all" \
+                  "$artifacts/verify-all-failed"
+              fi
+              printf 'VERIFY_ALL_EXIT=%s\n' "$verify_status" >&2
+              exit "$verify_status"
+            fi
+
+            manifest="$output/verify-all/manifest.txt"
+            step23="$output/verify-all/logs/23_verify-linux-arm64-translation-entry.log"
+            step24="$output/verify-all/logs/24_verify-arm64-host-address-contract.log"
+            step25="$output/verify-all/logs/25_verify-android-device-manifest.log"
+
+            for required in "$manifest" "$step23" "$step24" "$step25"
+            do
+              [ -f "$required" ] || {
+                printf 'REQUIRED EVIDENCE FILE MISSING: %s\n' "$required" >&2
+                exit 1
+              }
+            don
+
+            exact_line()
+              file_path=$1
+              expected=$2
+              actual=$(grep -Fxc "$expected" "$file_path" || true)
+              [ "$actual" -eq 1 ] || {
+                printf 'EXACT LINE MISMATCH file=%s line=[%s] expected=1 actual=%s\n' \
+                  "$file_path" "$expected" "$actual" >&2
+                exit 1
+              }
+            }
+
+            exact_line "$manifest" "COMMIT_SHA=$expected_feature"
+            exact_line "$manifest" 'STEP_23_NAME=verify-linux-arm64-translation-entry'
+            exact_line "$manifest" 'STEP_23_EXIT=0'
+            exact_line "$manifest" 'STEP_24_NAME=verify-arm64-host-address-contract'
+            exact_line "$manifest" 'STEP_24_EXIT=0'
+            exact_line "$manifest" 'STEP_25_NAME=verify-android-device-manifest'
+            exact_line "$manifest" 'STEP_25_EXIT=0'
+            exact_line "$manifest" 'FAILED_STEP=NONE'
+            exact_line "$manifest" 'OVERALL_STATUS=PASS'
+
+            exact_line "$output/verify-all.stdout.log" 'VERIFY ALL: PASS'
+            exact_line "$step23" 'X64 TO ARM64 TRANSLATED EXECUTION: PASS'
+            exact_line "$step23" 'WINLATOR COMPARISON: NOT RUN'
+            exact_line "$step24" 'ARM64 HOST ADDRESS CONTRACT VERIFY: PASS'
+            exact_line "$step25" 'ANDROID DEVICE MANIFEST FIXTURE TEST: PASS'
+            exact_line "$step25" 'ANDROID DEVICE MANIFEST REJECTION MATRIX: PASS'
+            exact_line "$step25" 'ANDROID RAW SERIAL NON-PERSISTENCE: PASS'
+            exact_line "$step25" 'ANDROID READ-ONLY ADB BOUNDARY: PASS'
+            exact_line "$step25" 'ANDROID DEVICE MANIFEST VERIFY: PASS'
+            exact_line "$step25" 'DBLYATEM EXECUTION: NOT RUN'
+            exact_line "$step25" 'WINLATOR EXECUTION: NOT RUN'
+            exact_line "$step25" 'WINLATOR COMPARISON: NOT RUN'
+
+            combined="$output/combined-logs.txt"
+            find "$output/verify-all/logs" -type f -name '*.log' -print0 |
+              sort -z | xargs -0 cat > "$combined"
+            for forbidden in \
+              'AddressSanitizer:' 'UndefinedBehaviorSanitizer:' \
+              'runtime error:' 'TEST: FAIL' 'VERIFY: FAIL'
+            do
+              if grep -F "$forbidden" "$combined" >/dev/null; then
+                printf 'FORBIDDEN LOG MARKER: %s\n' "$forbidden" >&2
+                exit 1
+              fi
+            done
+            rm -f "$combined"
+
+            {
+              printf 'DBLYATEM_PR118_ANDROID_DEVICE_MANIFEST_R1_ACCEPTED\n'
+              printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf 'EXECUTION_PROVIDER=CIRCLECI\n'
+              printf 'HOST_ARCH=AARCH64\n'
+              printf 'RUNTIME_PAGE_SIZE=4096\n'
+              printf 'CANONICAL_VERIFY_ALL=PASS\n'
+              printf 'VERIFY_STEP_23=PASS\n'
+              printf 'VERIFY_STEP_24=PASS\n'
+              printf 'VERIFY_STEP_25=PASS\n'
+              printf 'ANDROID_DEVICE_MANIFEST_FIXTURE=PASS\n'
+              printf 'ANDROID_DEVICE_REJECTION_MATRIX=PASS\n'
+              printf 'ANDROID_RAW_SERIAL_NON_PERSISTENCE=PASS\n'
+              printf 'ANDROID_READ_ONLY_ADB_BOUNDARY=PASS\n'
+              printf 'PHYSICAL_ANDROID_CAPTURE=NOT_RUN\n'
+              printf 'DEVICE_MUTATION=NONE\n'
+              printf 'DBLYATEM_EXECUTION=NOT_RUN\n'
+              printf 'WINLATOR_EXECUTION=NOT_RUN\n'
+              printf 'WINLATOR_COMPARISON=NOT_RUN\n'
+              printf 'PR118_ANDROID_DEVICE_MANIFEST_R1=PASS\n'
+            } > "$output/accepted.txt"
+
+            (
+              cd "$output"
+              find . -type f ! -name SHA256SUMS -print0 |
+                LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS
+            )
+
+            (
+              cd /tmp
+              tar -czf "$archive" \
+                dblyatem-pr118-android-device-manifest-r1-output
+            )
+            (
+              cd "$artifacts"
+              sha256sum "$(basename "$archive")" > \
+                "$(basename "$archive").sha256"
+            )
+
+            printf '%s\n' 'PR118 ANDROID DEVICE MANIFEST R1 CIRCLECI VERIFY: PASS'
+            printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+            printf 'CONFIG_HEAD=%s\n' "$expected_config"
+            printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+            printf 'VERIFY_STEP_23=PASS\n'
+            printf 'VERIFY_STEP_24=PASS\n'
+            printf 'VERIFY_STEP_25=PASS\n'
+            printf 'ANDROID_DEVICE_MANIFEST_FIXTURE=PASS\n'
+            printf 'ANDROID_RAW_SERIAL_NON_PERSISTENCE=PASS\n'
+            printf 'ANDROID_READ_ONLY_ADB_BOUNDARY=PASS\n'
+            printf 'PHYSICAL_ANDROID_CAPTURE=NOT_RUN\n'
+            printf 'DEVICE_MUTATION=NONE\n'
+            printf 'DBLYATEM_EXECUTION=NOT_RUN\n'
+            printf 'WINLATOR_EXECUTION=NOT_RUN\n'
+            printf 'WINLATOR_COMPARISON=NOT_RUN\n'
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr118-android-device-manifest-r1-artifacts
+          destination: dblyatem-pr118-android-device-manifest-r1-artifacts
+          when: always
+
+workflows:
+  pr118-android-device-manifest-r1:
+    when: << pipeline.parameters.run_pr118_android_device_manifest_r1 >>
+    jobs:
+      - pr118-android-device-manifest-r1
