@@ -1,0 +1,202 @@
+version: 2.1
+
+parameters:
+  run_pr108_arm64_step18_diagnostic_r7:
+    type: boolean
+    default: false
+
+jobs:
+  pr108-arm64-step18-diagnostic-r7:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                make \
+                file \
+                util-linux \
+                coreutils \
+                grep \
+                sed
+
+      - run:
+          name: Replay canonical ARM64 step 18
+          command: |
+            set -euo pipefail
+
+            expected='797c46de130c26b798f36723a9029031fa8ebb0b'
+            challenge='ce9c5211dca92e57cf8ed046ca8072b25888d6713aa29138d8c13474eb9674e6'
+            source='/tmp/dblyatem-pr108-r7-source'
+            output='/tmp/dblyatem-pr108-r7-output'
+            compiler_bin='/tmp/dblyatem-pr108-r7-compiler-bin'
+            log="$output/18_verify-linux-arm64-wx-provider.log"
+
+            rm -rf "$source" "$output" "$compiler_bin"
+            mkdir -p "$output" "$compiler_bin"
+
+            git init --quiet "$source"
+            git -C "$source" remote add origin \
+              https://github.com/Deadbytes101/DBLYATEM.git
+            git -C "$source" fetch \
+              --quiet \
+              --depth=1 \
+              origin \
+              "$expected"
+            git -C "$source" checkout \
+              --quiet \
+              --detach \
+              FETCH_HEAD
+
+            head=$(git -C "$source" rev-parse HEAD)
+            tracked_dirty=$(git -C "$source" status \
+              --porcelain=v1 \
+              --untracked-files=no)
+            machine=$(uname -m)
+            page_size=$(getconf PAGESIZE)
+            shell_file=$(file -Lb "$(command -v sh)")
+            virtualization=$(systemd-detect-virt 2>/dev/null || printf '%s' none)
+
+            [ "$head" = "$expected" ] || {
+              printf 'HEAD_MISMATCH expected=%s actual=%s\n' \
+                "$expected" "$head"
+              exit 90
+            }
+
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'TRACKED CHECKOUT DIRTY'
+              printf '%s\n' "$tracked_dirty"
+              exit 91
+            }
+
+            case "$machine" in
+              aarch64|arm64) ;;
+              *)
+                printf 'NOT NATIVE ARM64: %s\n' "$machine"
+                exit 92
+                ;;
+            esac
+
+            [ "$page_size" = 4096 ] || {
+              printf 'UNEXPECTED PAGE SIZE: %s\n' "$page_size"
+              exit 93
+            }
+
+            case "$shell_file" in
+              *AArch64*|*aarch64*) ;;
+              *)
+                printf 'USERSPACE IS NOT AARCH64: %s\n' "$shell_file"
+                exit 94
+                ;;
+            esac
+
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'SOFTWARE EMULATION REJECTED: %s\n' "$virtualization"
+                exit 95
+                ;;
+            esac
+
+            real_gcc=$(command -v gcc)
+            real_clang=$(command -v clang)
+
+            cp "$source/tools/test-compiler-contract.sh" \
+              "$compiler_bin/gcc"
+            cp "$source/tools/test-compiler-contract.sh" \
+              "$compiler_bin/clang"
+            chmod 700 "$compiler_bin/gcc" "$compiler_bin/clang"
+
+            export DB_TEST_REAL_GCC="$real_gcc"
+            export DB_TEST_REAL_CLANG="$real_clang"
+            export DB_TEST_ROOT="$source"
+            export DB_TEST_WRITE_CONTRACT="$source/tests/test_write_contract.h"
+            export CC=clang
+            export PATH="$compiler_bin:$PATH"
+
+            {
+              printf '%s\n' 'DBLYATEM_PR108_ARM64_STEP18_DIAGNOSTIC_R7'
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf 'VIRTUALIZATION=%s\n' "$virtualization"
+              printf 'REAL_GCC=%s\n' "$real_gcc"
+              printf 'REAL_CLANG=%s\n' "$real_clang"
+              printf 'COMPILER_ADAPTER=%s\n' \
+                'tools/test-compiler-contract.sh'
+            } | tee "$output/host.txt"
+
+            set +e
+            (
+              cd "$source"
+              /bin/sh tools/verify-linux-arm64-wx-provider.sh
+            ) > "$log" 2>&1
+            status=$?
+            set -e
+
+            cat "$log"
+
+            {
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf 'STEP18_EXIT=%s\n' "$status"
+              printf 'STEP18_LOG=%s\n' \
+                '18_verify-linux-arm64-wx-provider.log'
+            } > "$output/summary.txt"
+
+            (
+              cd "$output"
+              sha256sum \
+                host.txt \
+                summary.txt \
+                18_verify-linux-arm64-wx-provider.log \
+                > SHA256SUMS
+              sha256sum -c SHA256SUMS
+            )
+
+            printf '\n%s\n' 'PR108 ARM64 STEP18 DIAGNOSTIC R7'
+            printf 'FEATURE_HEAD=%s\n' "$head"
+            printf 'STEP18_EXIT=%s\n' "$status"
+
+            if [ "$status" -eq 0 ]; then
+              printf '%s\n' 'STEP18_REPLAY=PASS'
+              exit 0
+            fi
+
+            printf '%s\n' 'STEP18_REPLAY=FAIL'
+            exit "$status"
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr108-r7-output
+          destination: dblyatem-pr108-r7-output
+          when: always
+
+workflows:
+  pr108-arm64-step18-diagnostic-r7:
+    when: << pipeline.parameters.run_pr108_arm64_step18_diagnostic_r7 >>
+
+    jobs:
+      - pr108-arm64-step18-diagnostic-r7:
+          filters:
+            branches:
+              only:
+                - deadbyte/pr108-arm64-step18-diagnostic-r7
+            tags:
+              ignore: /.*/
