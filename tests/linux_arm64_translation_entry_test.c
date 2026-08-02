@@ -261,7 +261,8 @@ static int build_pipeline(uint64_t code_base,
               0u,
               page_size,
               pipeline->image,
-              sizeof(pipeline->image),
+              (size_t)pipeline->relocate_summary.output_word_count *
+                  sizeof(uint32_t),
               &pipeline->image_plan) == DB_ARM64_CODE_IMAGE_OK);
     return 1;
 }
