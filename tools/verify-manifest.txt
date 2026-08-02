@@ -15,3 +15,4 @@ STANDALONE=tools/verify-x64-arm64-plan.sh
 STANDALONE=tools/verify-x64-arm64-encode.sh
 STANDALONE=tools/verify-x64-arm64-relocate.sh
 STANDALONE=tools/verify-arm64-code-image.sh
+STANDALONE=tools/verify-linux-arm64-wx-provider.sh
