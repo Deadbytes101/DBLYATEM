@@ -4,19 +4,7 @@
 #include <stdint.h>
 #include <unistd.h>
 
-#define DB_STRINGIFY_INNER(value) #value
-#define DB_STRINGIFY(value) DB_STRINGIFY_INNER(value)
-#define CHECK(value)                                                        \
-    do {                                                                    \
-        if (!(value)) {                                                     \
-            static const char failure[] =                                   \
-                "WIN32 PROVIDER CHECK FAILED: " DB_STRINGIFY(__LINE__) "\n"; \
-            const ssize_t written =                                         \
-                write(STDERR_FILENO, failure, sizeof(failure) - 1u);         \
-            (void)written;                                                  \
-            return 0;                                                       \
-        }                                                                   \
-    } while (0)
+#define CHECK(value) do { if (!(value)) return 0; } while (0)
 
 static void fill(void *data, size_t size, uint8_t value)
 {
@@ -25,17 +13,6 @@ static void fill(void *data, size_t size, uint8_t value)
 
     for (index = 0u; index < size; ++index) {
         bytes[index] = value;
-    }
-}
-
-static void copy_bytes(void *destination, const void *source, size_t size)
-{
-    uint8_t *output = (uint8_t *)destination;
-    const uint8_t *input = (const uint8_t *)source;
-    size_t index;
-
-    for (index = 0u; index < size; ++index) {
-        output[index] = input[index];
     }
 }
 
@@ -66,7 +43,7 @@ static int preserved(const db_win32_provider_record *catalog,
     db_win32_provider_match before;
 
     fill(&match, sizeof(match), UINT8_C(0xa5));
-    copy_bytes(&before, &match, sizeof(before));
+    before = match;
     return db_win32_provider_lookup(catalog,
                                     count,
                                     module,
