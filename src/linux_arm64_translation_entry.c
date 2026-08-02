@@ -47,18 +47,15 @@ static bool regions_overlap(const void *left,
     return left_address - right_address < right_size;
 }
 
-static bool canonical_address(uint64_t address)
+static bool arm64_host_address_nonzero(uint64_t address)
 {
-    const uint64_t upper = address >> 48u;
-    const uint64_t sign = (address >> 47u) & UINT64_C(1);
-
     return address != 0u &&
-           upper == (sign != 0u ? UINT64_C(0xffff) : UINT64_C(0));
+           (address >> 48u) == UINT64_C(0);
 }
 
 static bool entry_address_valid(uint64_t entry_address)
 {
-    return canonical_address(entry_address) &&
+    return arm64_host_address_nonzero(entry_address) &&
            (entry_address & UINT64_C(3)) == 0u;
 }
 
