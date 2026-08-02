@@ -1,0 +1,344 @@
+version: 2.1
+
+parameters:
+  run_pr116_arm64_translated_entry_r1:
+    type: boolean
+    default: false
+
+jobs:
+  pr116-arm64-translated-entry-r1:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                make \
+                file \
+                binutils \
+                util-linux \
+                coreutils \
+                grep \
+                sed \
+                findutils \
+                gawk \
+                tar
+
+      - run:
+          name: Verify exact PR116 translated entry bridge on native ARM64
+          command: |
+            set -euo pipefail
+
+            repository='https://github.com/Deadbytes101/DBLYATEM.git'
+            expected_branch='deadbyte/pr116-arm64-translated-entry-r1'
+            expected_feature='6a2a3d294c8ea0536cab354912bdbdb21bc85a97'
+            expected_config="${CIRCLE_SHA1}"
+            expected_challenge='fbf63a08c2c56a4225d2c0f1e12e4de2a2061480582a0665cf89574cc8313883'
+
+            checkout='/tmp/dblyatem-pr116-r1-checkout'
+            output='/tmp/dblyatem-pr116-arm64-translated-entry-r1-output'
+            artifacts='/tmp/dblyatem-pr116-arm64-translated-entry-r1-artifacts'
+            archive="$artifacts/pr116-arm64-translated-entry-r1.tar.gz"
+
+            rm -rf "$checkout" "$output" "$artifacts"
+            mkdir -p "$checkout" "$output" "$artifacts" "$output/source"
+
+            [ "${CIRCLE_BRANCH:-}" = "$expected_branch" ] || {
+              printf 'BRANCH MISMATCH expected=%s actual=%s\n' \
+                "$expected_branch" "${CIRCLE_BRANCH:-missing}" >&2
+              exit 1
+            }
+
+            machine=$(uname -m)
+            case "$machine" in
+              aarch64|arm64) ;;
+              *) printf 'HOST ARCH REJECTED: %s\n' "$machine" >&2; exit 1 ;;
+            esac
+
+            page_size=$(getconf PAGESIZE)
+            [ "$page_size" = '4096' ] || {
+              printf 'PAGE SIZE REJECTED: %s\n' "$page_size" >&2
+              exit 1
+            }
+
+            shell_identity=$(file -L /bin/sh)
+            printf '%s\n' "$shell_identity" |
+              grep -Eiq 'aarch64|ARM aarch64' || {
+                printf 'NON-AARCH64 USERSPACE REJECTED: %s\n' "$shell_identity" >&2
+                exit 1
+              }
+
+            virtualization=$(systemd-detect-virt 2>/dev/null || true)
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'EMULATED HOST REJECTED: %s\n' "$virtualization" >&2
+                exit 1
+                ;;
+            esac
+
+            git init "$checkout"
+            git -C "$checkout" remote add origin "$repository"
+            git -C "$checkout" fetch --depth=1 origin "$expected_feature"
+            git -C "$checkout" checkout --detach FETCH_HEAD
+
+            observed_feature=$(git -C "$checkout" rev-parse HEAD)
+            [ "$observed_feature" = "$expected_feature" ] || {
+              printf 'FEATURE HEAD MISMATCH expected=%s actual=%s\n' \
+                "$expected_feature" "$observed_feature" >&2
+              exit 1
+            }
+
+            tracked_dirty=$(git -C "$checkout" status --porcelain --untracked-files=no)
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'FRESH CHECKOUT TRACKED DIRTY' >&2
+              exit 1
+            }
+
+            mode_line=$(git -C "$checkout" ls-files -s \
+              tools/verify-linux-arm64-translation-entry.sh)
+            printf '%s\n' "$mode_line" | grep -Eq '^100755 ' || {
+              printf 'VERIFIER MODE REJECTED: %s\n' "$mode_line" >&2
+              exit 1
+            }
+
+            header="$checkout/include/dblyat/linux_arm64_translation_entry.h"
+            source="$checkout/src/linux_arm64_translation_entry.c"
+            assembly="$checkout/src/linux_arm64_translation_entry_aarch64.S"
+            test_file="$checkout/tests/linux_arm64_translation_entry_test.c"
+            verifier="$checkout/tools/verify-linux-arm64-translation-entry.sh"
+
+            grep -Fq 'terminal_return_count' "$header"
+            grep -Fq 'context->terminal_return_count != UINT64_MAX' "$source"
+            grep -Fq 'mov x19, x1' "$assembly"
+            grep -Fq 'mov x20, x2' "$assembly"
+            grep -Fq 'blr x16' "$assembly"
+            grep -Fq 'ldr x9, [x20]' "$assembly"
+            grep -Fq 'str x9, [x20]' "$assembly"
+            grep -Fq 'db_x64_block_build' "$test_file"
+            grep -Fq 'db_x64_ir_lower_block' "$test_file"
+            grep -Fq 'db_arm64_select_block' "$test_file"
+            grep -Fq 'db_x64_arm64_plan_block' "$test_file"
+            grep -Fq 'db_x64_arm64_encode_block' "$test_file"
+            grep -Fq 'db_x64_arm64_resolve_helpers' "$test_file"
+            grep -Fq 'db_arm64_code_image_build' "$test_file"
+            grep -Fq 'db_linux_arm64_wx_publish' "$test_file"
+            grep -Fq 'db_linux_arm64_translation_enter' "$test_file"
+            grep -Fq 'db_linux_arm64_wx_release' "$test_file"
+            grep -Fq 'X64 TO ARM64 TRANSLATED EXECUTION: PASS' "$verifier"
+
+            {
+              printf 'VERIFIER_MODE=100755\n'
+              printf 'FIXED_X19_GUEST_STATE_ABI=BOUND\n'
+              printf 'FIXED_X20_CONTEXT_ABI=BOUND\n'
+              printf 'TERMINAL_RETURN_COUNTER=CALLER_OWNED\n'
+              printf 'X64_TRANSLATOR_PIPELINE=CONNECTED\n'
+              printf 'WX_PUBLISH_ENTER_RELEASE=CONNECTED\n'
+              printf 'WINLATOR_COMPARISON=NOT_RUN\n'
+            } > "$output/source-contract.txt"
+
+            set +e
+            (
+              cd "$checkout"
+              /bin/sh tools/verify-all.sh
+            ) > "$output/verify-all.stdout.log" 2>&1
+            verify_status=$?
+            set -e
+
+            if [ -d "$checkout/build/verify-all" ]; then
+              cp -R "$checkout/build/verify-all" "$output/verify-all"
+            fi
+
+            {
+              printf 'DBLYATEM_PR116_ARM64_TRANSLATED_ENTRY_R1_HOST\n'
+              printf 'FEATURE_HEAD=%s\n' "$observed_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf 'VIRTUALIZATION=%s\n' "${virtualization:-none}"
+              printf 'FRESH_CHECKOUT_DIRTY=NO\n'
+            } > "$output/host.txt"
+
+            [ "$verify_status" -eq 0 ] || {
+              cp "$output/verify-all.stdout.log" \
+                "$artifacts/verify-all.failed.log"
+              if [ -d "$output/verify-all" ]; then
+                cp -R "$output/verify-all" \
+                  "$artifacts/verify-all-failed"
+              fi
+              printf 'VERIFY_ALL_EXIT=%s\n' "$verify_status" >&2
+              exit "$verify_status"
+            }
+
+            manifest="$output/verify-all/manifest.txt"
+            step18="$output/verify-all/logs/18_verify-linux-arm64-wx-provider.log"
+            step21="$output/verify-all/logs/21_verify-arm64-translation-benchmark.log"
+            step22="$output/verify-all/logs/22_verify-arm64-translation-benchmark-flags.log"
+            step23="$output/verify-all/logs/23_verify-linux-arm64-translation-entry.log"
+
+            for required in \
+              "$manifest" \
+              "$step18" \
+              "$step21" \
+              "$step22" \
+              "$step23"
+            do
+              [ -f "$required" ] || {
+                printf 'REQUIRED EVIDENCE FILE MISSING: %s\n' "$required" >&2
+                exit 1
+              }
+            done
+
+            exact_line()
+            {
+              file_path=$1
+              expected=$2
+              actual=$(grep -Fxc "$expected" "$file_path" || true)
+              [ "$actual" -eq 1 ] || {
+                printf 'EXACT LINE MISMATCH file=%s line=[%s] expected=1 actual=%s\n' \
+                  "$file_path" "$expected" "$actual" >&2
+                exit 1
+              }
+            }
+
+            exact_count()
+            {
+              file_path=$1
+              expected=$2
+              count=$3
+              actual=$(grep -Fxc "$expected" "$file_path" || true)
+              [ "$actual" -eq "$count" ] || {
+                printf 'EXACT COUNT MISMATCH file=%s line=[%s] expected=%s actual=%s\n' \
+                  "$file_path" "$expected" "$count" "$actual" >&2
+                exit 1
+              }
+            }
+
+            exact_line "$manifest" "COMMIT_SHA=$expected_feature"
+            exact_line "$manifest" 'STEP_18_NAME=verify-linux-arm64-wx-provider'
+            exact_line "$manifest" 'STEP_18_EXIT=0'
+            exact_line "$manifest" 'STEP_21_NAME=verify-arm64-translation-benchmark'
+            exact_line "$manifest" 'STEP_21_EXIT=0'
+            exact_line "$manifest" 'STEP_22_NAME=verify-arm64-translation-benchmark-flags'
+            exact_line "$manifest" 'STEP_22_EXIT=0'
+            exact_line "$manifest" 'STEP_23_NAME=verify-linux-arm64-translation-entry'
+            exact_line "$manifest" 'STEP_23_EXIT=0'
+            exact_line "$manifest" 'FAILED_STEP=NONE'
+            exact_line "$manifest" 'OVERALL_STATUS=PASS'
+
+            exact_line "$output/verify-all.stdout.log" 'VERIFY ALL: PASS'
+            exact_line "$step18" 'NATIVE AARCH64 EXECUTION: PASS'
+            exact_line "$step21" 'ARM64 TRANSLATION BENCHMARK VERIFY: PASS'
+            exact_line "$step22" 'ARM64 TRANSLATION BENCHMARK FLAG VERIFY: PASS'
+
+            exact_count "$step23" 'LINUX ARM64 TRANSLATED ENTRY TEST: PASS' 3
+            exact_count "$step23" 'X64 BYTES TO NATIVE ARM64 EXECUTION: PASS' 3
+            exact_count "$step23" 'TRANSLATED GUEST RAX RESULT: PASS' 3
+            exact_count "$step23" 'TRANSLATED TERMINAL RETURN HELPER: PASS' 3
+            exact_count "$step23" 'TRANSLATED W^X RELEASE CYCLES: PASS' 3
+            exact_line "$step23" 'X64 TO ARM64 TRANSLATED EXECUTION: PASS'
+            exact_line "$step23" 'TRANSLATED ENTRY ASSEMBLY ABI: PASS'
+            exact_line "$step23" 'TRANSLATED ENTRY VALIDATION: PASS'
+            exact_line "$step23" 'TRANSLATED ENTRY TRANSACTIONAL AUDIT: PASS'
+            exact_line "$step23" 'TRANSLATED W^X PUBLISH ENTER RELEASE: PASS'
+            exact_line "$step23" 'LINUX ARM64 TRANSLATED ENTRY VERIFY: PASS'
+            exact_line "$step23" 'WINLATOR COMPARISON: NOT RUN'
+
+            combined="$output/combined-logs.txt"
+            find "$output/verify-all/logs" -type f -name '*.log' -print0 |
+              sort -z |
+              xargs -0 cat > "$combined"
+
+            for forbidden in \
+              'unused-result' \
+              'undeclared identifier' \
+              'AddressSanitizer:' \
+              'UndefinedBehaviorSanitizer:' \
+              'runtime error:' \
+              'TEST: FAIL' \
+              'VERIFY: FAIL'
+            do
+              if grep -F "$forbidden" "$combined" >/dev/null; then
+                printf 'FORBIDDEN LOG MARKER: %s\n' "$forbidden" >&2
+                exit 1
+              fi
+            done
+            rm -f "$combined"
+
+            {
+              printf 'DBLYATEM_PR116_ARM64_TRANSLATED_ENTRY_R1_ACCEPTED\n'
+              printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf 'EXECUTION_PROVIDER=CIRCLECI\n'
+              printf 'HOST_ARCH=AARCH64\n'
+              printf 'RUNTIME_PAGE_SIZE=4096\n'
+              printf 'CANONICAL_VERIFY_ALL=PASS\n'
+              printf 'VERIFY_STEP_23=PASS\n'
+              printf 'ASSEMBLY_ABI=PASS\n'
+              printf 'VALIDATION_PRESERVATION=PASS\n'
+              printf 'X64_TRANSLATOR_PIPELINE=PASS\n'
+              printf 'TRANSLATED_GUEST_RAX_RESULT=PASS\n'
+              printf 'TERMINAL_RETURN_EXACTLY_ONCE=PASS\n'
+              printf 'WX_PUBLISH_ENTER_RELEASE=PASS\n'
+              printf 'REPEATED_EXECUTION_CYCLES=8\n'
+              printf 'WINLATOR_COMPARISON=NOT_RUN\n'
+              printf 'NATIVE_AARCH64_EXECUTION=PASS\n'
+              printf 'PR116_ARM64_TRANSLATED_ENTRY_R1=PASS\n'
+            } > "$output/accepted.txt"
+
+            (
+              cd "$output"
+              find . -type f ! -name SHA256SUMS -print0 |
+                LC_ALL=C sort -z |
+                xargs -0 sha256sum > SHA256SUMS
+            )
+
+            (
+              cd /tmp
+              tar -czf "$archive" dblyatem-pr116-arm64-translated-entry-r1-output
+            )
+
+            (
+              cd "$artifacts"
+              sha256sum "$(basename "$archive")" > "$(basename "$archive").sha256"
+            )
+
+            printf '%s\n' 'PR116 ARM64 TRANSLATED ENTRY R1 CIRCLECI VERIFY: PASS'
+            printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+            printf 'CONFIG_HEAD=%s\n' "$expected_config"
+            printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+            printf 'VERIFY_STEP_23=PASS\n'
+            printf 'X64_TRANSLATOR_PIPELINE=PASS\n'
+            printf 'TRANSLATED_GUEST_RAX_RESULT=PASS\n'
+            printf 'TERMINAL_RETURN_EXACTLY_ONCE=PASS\n'
+            printf 'REPEATED_EXECUTION_CYCLES=8\n'
+            printf 'NATIVE_AARCH64_EXECUTION=PASS\n'
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr116-arm64-translated-entry-r1-artifacts
+          destination: dblyatem-pr116-arm64-translated-entry-r1-artifacts
+          when: always
+
+workflows:
+  pr116-arm64-translated-entry-r1:
+    when: << pipeline.parameters.run_pr116_arm64_translated_entry_r1 >>
+    jobs:
+      - pr116-arm64-translated-entry-r1
