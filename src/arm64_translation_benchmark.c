@@ -158,6 +158,12 @@ static bool operation_matches_phase(
         !zero_bytes(operation->reserved, sizeof(operation->reserved)) ||
         operation->sequence_number == 0u ||
         operation->probe_count == 0u ||
+        operation->hit > 1u ||
+        operation->miss > 1u ||
+        operation->inserted > 1u ||
+        operation->duplicate > 1u ||
+        operation->conflict > 1u ||
+        operation->full > 1u ||
         outcome_flag_count(operation) != 1u) {
         return false;
     }
