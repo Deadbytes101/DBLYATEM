@@ -209,13 +209,105 @@ jobs:
 
             cat "$stdout_log"
 
-            [ "$verify_status" -eq 0 ] || {
+            verify_source="$source/build/verify-all"
+
+            if [ "$verify_status" -ne 0 ]; then
+              failure_manifest="$verify_source/manifest.txt"
+
+              printf '\n%s\n' \
+                'DBLYATEM VERIFY-ALL FAILURE DIAGNOSTIC'
               printf 'VERIFY_ALL_EXIT=%s\n' \
                 "$verify_status"
-              exit "$verify_status"
-            }
 
-            verify_source="$source/build/verify-all"
+              if [ -d "$verify_source" ]; then
+                mkdir -p \
+                  "$evidence/verify-all-failure"
+
+                cp -a \
+                  "$verify_source/." \
+                  "$evidence/verify-all-failure/"
+
+                if [ -f "$failure_manifest" ]; then
+                  printf '\n%s\n' \
+                    'VERIFY-ALL FAILURE MANIFEST'
+
+                  cat "$failure_manifest"
+
+                  failed_step=$(
+                    sed -n \
+                      's/^FAILED_STEP=//p' \
+                      "$failure_manifest" |
+                    tail -n 1
+                  )
+
+                  printf '\nFAILED_INTERNAL_STEP=%s\n' \
+                    "${failed_step:-unknown}"
+
+                  if [ -n "${failed_step:-}" ]; then
+                    if [ -d "$verify_source/logs" ]; then
+                      failed_log=$(
+                        find \
+                          "$verify_source/logs" \
+                          -maxdepth 1 \
+                          -type f \
+                          -name "*_${failed_step}.log" \
+                          -print |
+                        LC_ALL=C sort |
+                        sed -n '1p'
+                      )
+
+                      if [ -n "${failed_log:-}" ]; then
+                        printf 'FAILED_INTERNAL_LOG=%s\n' \
+                          "$failed_log"
+
+                        printf '\n%s\n' \
+                          'VERIFY-ALL FAILED INTERNAL LOG'
+
+                        cat "$failed_log"
+                      else
+                        printf '%s\n' \
+                          'FAILED INTERNAL LOG NOT FOUND'
+                      fi
+                    fi
+                  fi
+                else
+                  printf '%s\n' \
+                    'VERIFY-ALL FAILURE MANIFEST MISSING'
+                fi
+
+                {
+                  printf '%s\n' \
+                    'DBLYATEM_MAIN_ARM64_FAILURE_V1'
+                  printf 'SOURCE_HEAD=%s\n' \
+                    "$head"
+                  printf 'CONFIG_HEAD=%s\n' \
+                    "${CIRCLE_SHA1:-unknown}"
+                  printf 'VERIFY_ALL_EXIT=%s\n' \
+                    "$verify_status"
+                  printf 'FAILED_INTERNAL_STEP=%s\n' \
+                    "${failed_step:-unknown}"
+                } > "$evidence/failure.txt"
+
+                (
+                  cd "$evidence"
+
+                  find . \
+                    -type f \
+                    ! -name SHA256SUMS \
+                    -print0 |
+                    LC_ALL=C sort -z |
+                    xargs -0 sha256sum \
+                    > SHA256SUMS
+
+                  sha256sum -c SHA256SUMS
+                )
+              else
+                printf '%s\n' \
+                  'VERIFY-ALL EVIDENCE DIRECTORY MISSING'
+              fi
+
+              exit "$verify_status"
+            fi
             manifest="$verify_source/manifest.txt"
             step18="$verify_source/logs/18_verify-linux-arm64-wx-provider.log"
 
