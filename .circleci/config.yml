@@ -1,0 +1,344 @@
+version: 2.1
+
+parameters:
+  run_pr114_arm64_translation_benchmark_r1_final:
+    type: boolean
+    default: false
+
+jobs:
+  pr114-arm64-translation-benchmark-r1-final:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+            sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get update
+            sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git gcc clang make file util-linux coreutils grep sed \
+                findutils gawk tar
+
+      - run:
+          name: Verify exact PR114 benchmark record head on native ARM64
+          command: |
+            set -euo pipefail
+
+            repository='https://github.com/Deadbytes101/DBLYATEM.git'
+            expected_branch='deadbyte/pr114-arm64-translation-benchmark-r1-final'
+            expected_feature='136fce8e903684dc602ef2453dc85c65b06ede9c'
+            expected_config="${CIRCLE_SHA1}"
+            expected_challenge='86ffcb3190f463d083e3ed4063559b8027f5abbe297b611532dca4920a5d2abd'
+
+            checkout='/tmp/dblyatem-pr114-r1-final-checkout'
+            output='/tmp/dblyatem-pr114-arm64-translation-benchmark-r1-final-output'
+            artifacts='/tmp/dblyatem-pr114-arm64-translation-benchmark-r1-final-artifacts'
+            archive="$artifacts/pr114-arm64-translation-benchmark-r1-final.tar.gz"
+
+            rm -rf "$checkout" "$output" "$artifacts"
+            mkdir -p "$checkout" "$output" "$artifacts" "$output/source"
+
+            [ "${CIRCLE_BRANCH:-}" = "$expected_branch" ] || {
+              printf 'BRANCH MISMATCH expected=%s actual=%s\n' \
+                "$expected_branch" "${CIRCLE_BRANCH:-missing}" >&2
+              exit 1
+            }
+
+            machine=$(uname -m)
+            case "$machine" in
+              aarch64|arm64) ;;
+              *) printf 'HOST ARCH REJECTED: %s\n' "$machine" >&2; exit 1 ;;
+            esac
+
+            page_size=$(getconf PAGESIZE)
+            [ "$page_size" = 4096 ] || {
+              printf 'PAGE SIZE REJECTED: %s\n' "$page_size" >&2
+              exit 1
+            }
+
+            shell_identity=$(file -L /bin/sh)
+            printf '%s\n' "$shell_identity" | grep -Eiq 'aarch64|ARM aarch64' || {
+              printf 'NON-AARCH64 USERSPACE: %s\n' "$shell_identity" >&2
+              exit 1
+            }
+
+            virtualization=$(systemd-detect-virt 2>/dev/null || true)
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'EMULATED HOST REJECTED: %s\n' "$virtualization" >&2
+                exit 1
+                ;;
+            esac
+
+            git init "$checkout"
+            git -C "$checkout" remote add origin "$repository"
+            git -C "$checkout" fetch --depth=1 origin "$expected_feature"
+            git -C "$checkout" checkout --detach FETCH_HEAD
+            observed_feature=$(git -C "$checkout" rev-parse HEAD)
+            [ "$observed_feature" = "$expected_feature" ] || exit 1
+            [ -z "$(git -C "$checkout" status --porcelain --untracked-files=no)" ] || exit 1
+
+            core="$checkout/src/arm64_translation_benchmark.c"
+            runner="$checkout/tools/arm64-translation-reuse-benchmark.c"
+            verifier="$checkout/tools/verify-arm64-translation-benchmark.sh"
+            flag_test="$checkout/tests/arm64_translation_benchmark_flag_validation_test.c"
+            csv_template="$checkout/benchmarks/arm64-translation-reuse/raw-result-v1.csv"
+
+            grep -Fq 'operation->hit > 1u' "$core"
+            grep -Fq 'operation->miss > 1u' "$core"
+            grep -Fq 'operation->inserted > 1u' "$core"
+            grep -Fq 'operation->duplicate > 1u' "$core"
+            grep -Fq 'operation->conflict > 1u' "$core"
+            grep -Fq 'operation->full > 1u' "$core"
+            grep -Fq 'operation.miss = UINT32_MAX' "$flag_test"
+            grep -Fq 'O_WRONLY | O_CREAT | O_EXCL' "$runner"
+            grep -Fq '(void)remove(argv[1]);' "$runner"
+            grep -Fq 'validation-build-v1' "$verifier"
+            ! grep -Fq 'ce198297c2a40e4e29e69889ac895b150f457527' "$verifier"
+            grep -Fq 'identical output paths accepted' "$verifier"
+            grep -Fq 'existing output accepted' "$verifier"
+            grep -Fq 'CLOCK_MONOTONIC_RAW' "$runner"
+            grep -Fq 'PUBLISHED_BLOCK_EXECUTION=NO' "$runner"
+            grep -Fq 'WINLATOR_COMPARISON=NOT_RUN' "$runner"
+
+            cp "$core" "$output/source/"
+            cp "$runner" "$output/source/"
+            cp "$verifier" "$output/source/"
+            cp "$flag_test" "$output/source/"
+            cp "$checkout/tools/verify-arm64-translation-benchmark-flags.sh" "$output/source/"
+            cp "$checkout/include/dblyat/arm64_translation_benchmark.h" "$output/source/"
+            cp "$checkout/tools/verify-manifest.txt" "$output/source/"
+            cp "$checkout/benchmarks/arm64-translation-reuse/manifest-v1.txt" "$output/source/"
+            cp "$csv_template" "$output/source/"
+
+            set +e
+            (cd "$checkout" && /bin/sh tools/verify-all.sh) \
+              > "$output/verify-all.stdout.log" 2>&1
+            verify_status=$?
+            set -e
+
+            [ -d "$checkout/build/verify-all" ] && \
+              cp -R "$checkout/build/verify-all" "$output/verify-all"
+
+            {
+              printf 'DBLYATEM_PR114_ARM64_TRANSLATION_BENCHMARK_R1_FINAL_HOST\n'
+              printf 'FEATURE_HEAD=%s\n' "$observed_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf 'VIRTUALIZATION=%s\n' "${virtualization:-none}"
+              printf 'FRESH_CHECKOUT_DIRTY=NO\n'
+            } > "$output/host.txt"
+
+            [ "$verify_status" -eq 0 ] || {
+              cp "$output/verify-all.stdout.log" "$artifacts/verify-all.failed.log"
+              [ ! -d "$output/verify-all" ] || cp -R "$output/verify-all" "$artifacts/verify-all-failed"
+              exit "$verify_status"
+            }
+
+            manifest="$output/verify-all/manifest.txt"
+            step18="$output/verify-all/logs/18_verify-linux-arm64-wx-provider.log"
+            step19="$output/verify-all/logs/19_verify-arm64-block-cache.log"
+            step20="$output/verify-all/logs/20_verify-arm64-translation-reuse.log"
+            step21="$output/verify-all/logs/21_verify-arm64-translation-benchmark.log"
+            step22="$output/verify-all/logs/22_verify-arm64-translation-benchmark-flags.log"
+
+            for file_path in "$manifest" "$step18" "$step19" "$step20" "$step21" "$step22"
+            do
+              [ -f "$file_path" ] || { printf 'MISSING: %s\n' "$file_path" >&2; exit 1; }
+            done
+
+            exact_line()
+            {
+              actual=$(grep -Fxc "$2" "$1" || true)
+              [ "$actual" -eq 1 ] || {
+                printf 'EXACT LINE MISMATCH file=%s line=[%s] actual=%s\n' "$1" "$2" "$actual" >&2
+                exit 1
+              }
+            }
+
+            exact_count()
+            {
+              actual=$(grep -Fxc "$2" "$1" || true)
+              [ "$actual" -eq "$3" ] || {
+                printf 'EXACT COUNT MISMATCH file=%s line=[%s] expected=%s actual=%s\n' \
+                  "$1" "$2" "$3" "$actual" >&2
+                exit 1
+              }
+            }
+
+            exact_line "$manifest" "COMMIT_SHA=$expected_feature"
+            exact_line "$manifest" 'STEP_18_NAME=verify-linux-arm64-wx-provider'
+            exact_line "$manifest" 'STEP_18_EXIT=0'
+            exact_line "$manifest" 'STEP_19_NAME=verify-arm64-block-cache'
+            exact_line "$manifest" 'STEP_19_EXIT=0'
+            exact_line "$manifest" 'STEP_20_NAME=verify-arm64-translation-reuse'
+            exact_line "$manifest" 'STEP_20_EXIT=0'
+            exact_line "$manifest" 'STEP_21_NAME=verify-arm64-translation-benchmark'
+            exact_line "$manifest" 'STEP_21_EXIT=0'
+            exact_line "$manifest" 'STEP_22_NAME=verify-arm64-translation-benchmark-flags'
+            exact_line "$manifest" 'STEP_22_EXIT=0'
+            exact_line "$manifest" 'FAILED_STEP=NONE'
+            exact_line "$manifest" 'OVERALL_STATUS=PASS'
+            exact_line "$output/verify-all.stdout.log" 'VERIFY ALL: PASS'
+            exact_line "$step18" 'NATIVE AARCH64 EXECUTION: PASS'
+            exact_line "$step19" 'ARM64 BLOCK CACHE VERIFY: PASS'
+            exact_line "$step20" 'ARM64 TRANSLATION REUSE VERIFY: PASS'
+
+            exact_count "$step21" 'ARM64 TRANSLATION BENCHMARK TEST: PASS' 3
+            exact_count "$step21" 'ARM64 TRANSLATION BENCHMARK VALIDATION TEST: PASS' 3
+            exact_line "$step21" 'ARM64 TRANSLATION BENCHMARK VERIFY: PASS'
+            exact_line "$step21" 'ARM64 TRANSLATION BENCHMARK RECORD CONTRACT: PASS'
+            exact_line "$step21" 'ARM64 TRANSLATION BENCHMARK OUTPUT PAIR: PASS'
+            exact_line "$step21" 'ARM64 TRANSLATION BENCHMARK RAW CSV V1: PASS'
+            exact_line "$step21" 'ARM64 TRANSLATION BENCHMARK MONOTONIC RAW RUNNER: PASS'
+            exact_line "$step21" 'ARM64 TRANSLATION BENCHMARK NONEXECUTING BOUNDARY: PASS'
+            exact_line "$step21" 'ARM64 TRANSLATION BENCHMARK WINLATOR CLAIM: NOT RUN'
+
+            exact_count "$step22" 'ARM64 TRANSLATION BENCHMARK FLAG VALIDATION TEST: PASS' 3
+            exact_line "$step22" 'ARM64 TRANSLATION BENCHMARK FLAG VERIFY: PASS'
+            exact_line "$step22" 'ARM64 TRANSLATION BENCHMARK BINARY OUTCOME FLAGS: PASS'
+            exact_line "$step22" 'ARM64 TRANSLATION BENCHMARK WRAPAROUND REGRESSION: PASS'
+
+            live_binary="$output/arm64-translation-reuse-benchmark"
+            live_manifest="$output/live-manifest-v1.txt"
+            live_csv="$output/live-raw-result-v1.csv"
+            live_stdout="$output/live-runner.stdout.log"
+            flags='-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wshadow -Wstrict-prototypes -Wmissing-prototypes'
+            sources="
+            $checkout/src/arm64_translation_benchmark.c
+            $checkout/src/arm64_translation_reuse_common.c
+            $checkout/src/arm64_translation_reuse_probe.c
+            $checkout/src/arm64_translation_reuse_session.c
+            $checkout/src/arm64_translation_reuse_lookup.c
+            $checkout/src/arm64_translation_reuse_publish.c
+            $checkout/src/arm64_translation_reuse_names.c
+            $checkout/src/arm64_block_cache.c
+            "
+
+            # shellcheck disable=SC2086
+            gcc -D_POSIX_C_SOURCE=200809L -I"$checkout/include" $flags \
+              "$runner" $sources -o "$live_binary"
+
+            "$live_binary" "$live_manifest" "$live_csv" 8 \
+              DBLYATEM_R1_FINAL "$expected_feature" circleci-arm-medium \
+              ubuntu-22.04 linux-kernel fixed-ci cold-ci > "$live_stdout"
+
+            exact_line "$live_stdout" 'ARM64 TRANSLATION BENCHMARK RUNNER: PASS'
+            exact_line "$live_stdout" 'CLOCK_MONOTONIC_RAW=PASS'
+            exact_line "$live_stdout" 'MANIFEST_V1=PASS'
+            exact_line "$live_stdout" 'RAW_CSV_V1=PASS'
+            exact_line "$live_stdout" 'SAMPLE_COUNT=32'
+            exact_line "$live_stdout" 'PUBLISHED_BLOCK_EXECUTION=NO'
+            exact_line "$live_stdout" 'WINLATOR_COMPARISON=NOT_RUN'
+
+            exact_line "$live_manifest" 'DBLYATEM_ARM64_TRANSLATION_BENCHMARK_MANIFEST_V1'
+            exact_line "$live_manifest" 'FORMAT_VERSION=1'
+            exact_line "$live_manifest" 'BENCHMARK=arm64-translation-reuse'
+            exact_line "$live_manifest" 'RUNTIME_ID=DBLYATEM_R1_FINAL'
+            exact_line "$live_manifest" "RUNTIME_BUILD=$expected_feature"
+            exact_line "$live_manifest" 'DEVICE_ID=circleci-arm-medium'
+            exact_line "$live_manifest" 'PLATFORM_BUILD=ubuntu-22.04'
+            exact_line "$live_manifest" 'DRIVER_BUILD=linux-kernel'
+            exact_line "$live_manifest" 'POWER_MODE=fixed-ci'
+            exact_line "$live_manifest" 'THERMAL_START=cold-ci'
+            exact_line "$live_manifest" 'HOST_ARCH=aarch64'
+            exact_line "$live_manifest" 'CLOCK=CLOCK_MONOTONIC_RAW'
+            exact_line "$live_manifest" 'CLOCK_UNIT=nanoseconds'
+            exact_line "$live_manifest" 'ITERATIONS=8'
+            exact_line "$live_manifest" 'SAMPLE_COUNT=32'
+            exact_line "$live_manifest" 'PUBLISHED_BLOCK_EXECUTION=NO'
+            exact_line "$live_manifest" 'WINLATOR_COMPARISON=NOT_RUN'
+
+            head -n 1 "$live_csv" | cmp -s - "$csv_template"
+            [ "$(wc -l < "$live_csv" | tr -d ' ')" = 33 ]
+            awk -F, 'NF != 32 { exit 1 }' "$live_csv"
+            awk -F, 'NR > 1 && $2 != NR - 1 { exit 1 }' "$live_csv"
+            awk -F, 'NR > 1 && ($5 > $6 || $7 != $6 - $5) { exit 1 }' "$live_csv"
+            awk -F, 'NR > 1 && $4 == "PUBLICATION_INSERT" { n++ } END { exit n == 8 ? 0 : 1 }' "$live_csv"
+            awk -F, 'NR > 1 && $4 == "LOOKUP_HIT" { n++ } END { exit n == 8 ? 0 : 1 }' "$live_csv"
+            awk -F, 'NR > 1 && $4 == "LOOKUP_MISS" { n++ } END { exit n == 8 ? 0 : 1 }' "$live_csv"
+            awk -F, 'NR > 1 && $4 == "PUBLICATION_DUPLICATE" { n++ } END { exit n == 8 ? 0 : 1 }' "$live_csv"
+
+            combined="$output/combined-logs.txt"
+            find "$output/verify-all/logs" -type f -name '*.log' -print0 | sort -z | xargs -0 cat > "$combined"
+            for forbidden in 'unused-result' 'undeclared identifier' 'AddressSanitizer:' \
+              'UndefinedBehaviorSanitizer:' 'runtime error:' 'TEST: FAIL' 'VERIFY: FAIL'
+            do
+              ! grep -F "$forbidden" "$combined" >/dev/null || {
+                printf 'FORBIDDEN LOG MARKER: %s\n' "$forbidden" >&2
+                exit 1
+              }
+            done
+            rm -f "$combined" "$live_binary"
+
+            {
+              printf 'BINARY_OUTCOME_FLAGS=BOUND\n'
+              printf 'WRAPAROUND_REGRESSION=PRESENT\n'
+              printf 'CLOCK_MONOTONIC_RAW=BOUND\n'
+              printf 'RAW_SCHEMA_V1=PRESENT\n'
+              printf 'OUTPUT_PAIR_FAIL_CLOSED=BOUND\n'
+              printf 'VALIDATION_BUILD_TOKEN=NON_CLAIMING\n'
+              printf 'PUBLISHED_BLOCK_EXECUTION=NO\n'
+              printf 'WINLATOR_COMPARISON=NOT_RUN\n'
+            } > "$output/source-contract.txt"
+
+            {
+              printf 'DBLYATEM_PR114_ARM64_TRANSLATION_BENCHMARK_R1_FINAL_ACCEPTED\n'
+              printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf 'EXECUTION_PROVIDER=CIRCLECI\n'
+              printf 'HOST_ARCH=AARCH64\n'
+              printf 'RUNTIME_PAGE_SIZE=4096\n'
+              printf 'CANONICAL_VERIFY_ALL=PASS\n'
+              printf 'VERIFY_STEP_21=PASS\n'
+              printf 'VERIFY_STEP_22=PASS\n'
+              printf 'BENCHMARK_RECORD_CONTRACT=PASS\n'
+              printf 'OUTPUT_PAIR_FAIL_CLOSED=PASS\n'
+              printf 'RAW_CSV_V1=PASS\n'
+              printf 'CLOCK_MONOTONIC_RAW=PASS\n'
+              printf 'BINARY_OUTCOME_FLAGS=PASS\n'
+              printf 'WRAPAROUND_REGRESSION=PASS\n'
+              printf 'VALIDATION_BUILD_TOKEN=NON_CLAIMING\n'
+              printf 'LIVE_SAMPLE_COUNT=32\n'
+              printf 'PUBLISHED_BLOCK_EXECUTION=NO\n'
+              printf 'WINLATOR_COMPARISON=NOT_RUN\n'
+              printf 'NATIVE_AARCH64_EXECUTION=PASS\n'
+              printf 'PR114_ARM64_TRANSLATION_BENCHMARK_R1_FINAL=PASS\n'
+            } > "$output/accepted.txt"
+
+            (cd "$output" && find . -type f ! -name SHA256SUMS -print0 | \
+              LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS)
+            (cd /tmp && tar -czf "$archive" \
+              dblyatem-pr114-arm64-translation-benchmark-r1-final-output)
+            (cd "$artifacts" && sha256sum "$(basename "$archive")" > \
+              "$(basename "$archive").sha256")
+
+            printf '%s\n' 'PR114 ARM64 TRANSLATION BENCHMARK R1 FINAL CIRCLECI VERIFY: PASS'
+            printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+            printf 'CONFIG_HEAD=%s\n' "$expected_config"
+            printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+            printf 'VERIFY_STEP_21=PASS\n'
+            printf 'VERIFY_STEP_22=PASS\n'
+            printf 'OUTPUT_PAIR_FAIL_CLOSED=PASS\n'
+            printf 'VALIDATION_BUILD_TOKEN=NON_CLAIMING\n'
+            printf 'LIVE_SAMPLE_COUNT=32\n'
+            printf 'WINLATOR_COMPARISON=NOT_RUN\n'
+            printf 'NATIVE_AARCH64_EXECUTION=PASS\n'
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr114-arm64-translation-benchmark-r1-final-artifacts
+          destination: dblyatem-pr114-arm64-translation-benchmark-r1-final-artifacts
+          when: always
+
+workflows:
+  pr114-arm64-translation-benchmark-r1-final:
+    when: << pipeline.parameters.run_pr114_arm64_translation_benchmark_r1_final >>
+    jobs:
+      - pr114-arm64-translation-benchmark-r1-final
