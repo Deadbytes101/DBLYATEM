@@ -176,6 +176,20 @@ int main(void)
 }
 PROBE_SOURCE
 
+cat > "$probe_root/tests/feature_macro_probe_test.c" <<'FEATURE_PROBE_SOURCE'
+#include <sys/mman.h>
+
+#ifndef MAP_ANONYMOUS
+#error MAP_ANONYMOUS must remain visible after the forced test header
+#endif
+
+int main(void)
+{
+    (void)MAP_ANONYMOUS;
+    return 0;
+}
+FEATURE_PROBE_SOURCE
+
 real_gcc=$(command -v gcc)
 real_clang=$(command -v clang)
 
@@ -208,6 +222,36 @@ real_clang=$(command -v clang)
             -o "$temporary/clang-contract-probe"
 )
 "$temporary/clang-contract-probe" >/dev/null
+
+(
+    cd "$probe_root"
+    DB_TEST_REAL_GCC="$real_gcc" \
+    DB_TEST_REAL_CLANG="$real_clang" \
+    DB_TEST_ROOT="$probe_root" \
+    DB_TEST_WRITE_CONTRACT="$contract_header" \
+        "$wrapper_directory/gcc" \
+            -std=c11 -O2 \
+            -Wall -Wextra -Wpedantic -Werror \
+            -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+            tests/feature_macro_probe_test.c \
+            -o "$temporary/gcc-feature-macro-probe"
+)
+"$temporary/gcc-feature-macro-probe"
+
+(
+    cd "$probe_root"
+    DB_TEST_REAL_GCC="$real_gcc" \
+    DB_TEST_REAL_CLANG="$real_clang" \
+    DB_TEST_ROOT="$probe_root" \
+    DB_TEST_WRITE_CONTRACT="$contract_header" \
+        "$wrapper_directory/clang" \
+            -std=c11 -O2 \
+            -Wall -Wextra -Wpedantic -Werror \
+            -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+            tests/feature_macro_probe_test.c \
+            -o "$temporary/clang-feature-macro-probe"
+)
+"$temporary/clang-feature-macro-probe"
 
 if DB_TEST_REAL_GCC="$fake_compiler" \
    DB_TEST_REAL_CLANG="$fake_compiler" \
