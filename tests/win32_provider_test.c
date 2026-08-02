@@ -16,6 +16,17 @@ static void fill(void *data, size_t size, uint8_t value)
     }
 }
 
+static void copy_bytes(void *destination, const void *source, size_t size)
+{
+    uint8_t *output = (uint8_t *)destination;
+    const uint8_t *input = (const uint8_t *)source;
+    size_t index;
+
+    for (index = 0u; index < size; ++index) {
+        output[index] = input[index];
+    }
+}
+
 static int same(const void *left, const void *right, size_t size)
 {
     const uint8_t *a = (const uint8_t *)left;
@@ -43,7 +54,7 @@ static int preserved(const db_win32_provider_record *catalog,
     db_win32_provider_match before;
 
     fill(&match, sizeof(match), UINT8_C(0xa5));
-    before = match;
+    copy_bytes(&before, &match, sizeof(before));
     return db_win32_provider_lookup(catalog,
                                     count,
                                     module,
