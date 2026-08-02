@@ -18,3 +18,4 @@ STANDALONE=tools/verify-arm64-code-image.sh
 STANDALONE=tools/verify-linux-arm64-wx-provider.sh
 STANDALONE=tools/verify-arm64-block-cache.sh
 STANDALONE=tools/verify-arm64-translation-reuse.sh
+STANDALONE=tools/verify-arm64-translation-benchmark.sh
