@@ -219,6 +219,7 @@ static int test_query_and_alias_guards(void)
         db_win32_provider_match match;
     } alias;
     char shared[32] = "kernel32.dllGetCurrentProcessId";
+    char oversized_module[DB_WIN32_PROVIDER_MODULE_CAPACITY] = {0};
 
     catalog = db_win32_kernel32_catalog(&count);
 
@@ -231,7 +232,7 @@ static int test_query_and_alias_guards(void)
                     "Get CurrentProcessId", 20u,
                     DB_WIN32_PROVIDER_INVALID_QUERY));
     CHECK(preserved(catalog, count,
-                    "kernel32.dll", 32u,
+                    oversized_module, sizeof(oversized_module),
                     "GetCurrentProcessId", 19u,
                     DB_WIN32_PROVIDER_INVALID_QUERY));
 
