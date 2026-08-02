@@ -1,5 +1,11 @@
 include Makefile
 
+TEST_WRITE_CONTRACT := tests/test_write_contract.h
+TEST_BINARIES := $(patsubst tests/%.c,$(BUILD)/%,$(wildcard tests/*_test.c))
+
+$(TEST_BINARIES): $(TEST_WRITE_CONTRACT)
+$(TEST_BINARIES): CPPFLAGS += -include $(TEST_WRITE_CONTRACT)
+
 CORE += src/gateway_roundtrip.c
 HEADERS += include/dblyat/gateway_roundtrip.h
 
