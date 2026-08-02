@@ -1,0 +1,235 @@
+version: 2.1
+
+parameters:
+  run_pr108_provider_query_buffer_r6:
+    type: boolean
+    default: false
+
+jobs:
+  pr108-provider-query-buffer-r6:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                make \
+                file \
+                util-linux \
+                coreutils \
+                grep \
+                sed
+
+      - run:
+          name: Verify provider query buffer fix on native ARM64
+          command: |
+            set -euo pipefail
+
+            expected='797c46de130c26b798f36723a9029031fa8ebb0b'
+            challenge='49f65eae07d791cf200b25f2685c3d0b71e66ed557d919fb2536b195904fcc29'
+            source='/tmp/dblyatem-pr108-r6-source'
+            output='/tmp/dblyatem-pr108-r6-output'
+
+            rm -rf "$source" "$output"
+            mkdir -p "$output"
+
+            git init --quiet "$source"
+            git -C "$source" remote add origin \
+              https://github.com/Deadbytes101/DBLYATEM.git
+            git -C "$source" fetch \
+              --quiet \
+              --depth=1 \
+              origin \
+              "$expected"
+            git -C "$source" checkout \
+              --quiet \
+              --detach \
+              FETCH_HEAD
+
+            head=$(git -C "$source" rev-parse HEAD)
+            tracked_dirty=$(git -C "$source" status \
+              --porcelain=v1 \
+              --untracked-files=no)
+            machine=$(uname -m)
+            page_size=$(getconf PAGESIZE)
+            shell_file=$(file -Lb "$(command -v sh)")
+            virtualization=$(systemd-detect-virt 2>/dev/null || printf '%s' none)
+
+            [ "$head" = "$expected" ] || {
+              printf 'HEAD_MISMATCH expected=%s actual=%s\n' \
+                "$expected" "$head"
+              exit 90
+            }
+
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'TRACKED CHECKOUT DIRTY'
+              printf '%s\n' "$tracked_dirty"
+              exit 91
+            }
+
+            case "$machine" in
+              aarch64|arm64) ;;
+              *)
+                printf 'NOT NATIVE ARM64: %s\n' "$machine"
+                exit 92
+                ;;
+            esac
+
+            [ "$page_size" = 4096 ] || {
+              printf 'UNEXPECTED PAGE SIZE: %s\n' "$page_size"
+              exit 93
+            }
+
+            case "$shell_file" in
+              *AArch64*|*aarch64*) ;;
+              *)
+                printf 'USERSPACE IS NOT AARCH64: %s\n' "$shell_file"
+                exit 94
+                ;;
+            esac
+
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'SOFTWARE EMULATION REJECTED: %s\n' "$virtualization"
+                exit 95
+                ;;
+            esac
+
+            printf '%s\n' 'DBLYATEM_PR108_PROVIDER_QUERY_BUFFER_R6'
+            printf 'FEATURE_HEAD=%s\n' "$head"
+            printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+            printf 'MACHINE=%s\n' "$machine"
+            printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+            printf 'VIRTUALIZATION=%s\n' "$virtualization"
+
+            set +e
+            (
+              cd "$source"
+              /bin/sh tools/verify-all.sh
+            ) > "$output/verify-all.stdout.log" 2>&1
+            verify_status=$?
+            set -e
+
+            cat "$output/verify-all.stdout.log"
+
+            verify_root="$source/build/verify-all"
+            manifest="$verify_root/manifest.txt"
+            provider_log="$verify_root/logs/06_verify-win32-provider.log"
+
+            [ -f "$manifest" ] || {
+              printf '%s\n' 'VERIFY-ALL MANIFEST MISSING'
+              exit 110
+            }
+
+            [ -f "$provider_log" ] || {
+              printf '%s\n' 'WIN32 PROVIDER LOG MISSING'
+              exit 111
+            }
+
+            printf '\n%s\n' 'VERIFY-ALL MANIFEST'
+            cat "$manifest"
+            printf '\n%s\n' 'WIN32 PROVIDER STEP LOG'
+            cat "$provider_log"
+
+            cp "$manifest" "$output/manifest.txt"
+            cp "$provider_log" "$output/06_verify-win32-provider.log"
+
+            if [ "$verify_status" -ne 0 ]; then
+              printf '\n%s\n' \
+                'PR108 PROVIDER QUERY BUFFER R6: VERIFY-ALL FAIL'
+              printf 'VERIFY_ALL_EXIT=%s\n' "$verify_status"
+              exit "$verify_status"
+            fi
+
+            grep -Fx "COMMIT_SHA=$expected" "$manifest" >/dev/null
+            grep -Fx 'STEP_03_NAME=gcc-full-tree' "$manifest" >/dev/null
+            grep -Fx 'STEP_03_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'STEP_05_NAME=clang-full-tree' "$manifest" >/dev/null
+            grep -Fx 'STEP_05_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'STEP_06_NAME=verify-win32-provider' "$manifest" >/dev/null
+            grep -Fx 'STEP_06_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'FAILED_STEP=NONE' "$manifest" >/dev/null
+            grep -Fx 'OVERALL_STATUS=PASS' "$manifest" >/dev/null
+
+            pass_count=$(grep -Fxc 'WIN32 PROVIDER TEST: PASS' "$provider_log" || true)
+            [ "$pass_count" -eq 3 ] || {
+              printf 'WIN32 PROVIDER PASS COUNT MISMATCH: %s\n' "$pass_count"
+              exit 120
+            }
+
+            grep -Fx 'WIN32 PROVIDER VERIFY: PASS' "$provider_log" >/dev/null
+
+            if grep -E \
+              'WIN32 PROVIDER CHECK FAILED:|WIN32 PROVIDER TEST: FAIL|unused-result|AddressSanitizer:|UndefinedBehaviorSanitizer:|runtime error:' \
+              "$provider_log" >/dev/null
+            then
+              printf '%s\n' 'FORBIDDEN PROVIDER FAILURE MARKER OBSERVED'
+              exit 121
+            fi
+
+            {
+              printf '%s\n' \
+                'DBLYATEM_PR108_PROVIDER_QUERY_BUFFER_R6_ACCEPTED'
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf '%s\n' 'HOST_ARCH=AARCH64'
+              printf '%s\n' 'CANONICAL_VERIFY_ALL=PASS'
+              printf '%s\n' 'WIN32_PROVIDER_GCC=PASS'
+              printf '%s\n' 'WIN32_PROVIDER_CLANG=PASS'
+              printf '%s\n' 'WIN32_PROVIDER_SANITIZER=PASS'
+              printf '%s\n' 'FIRST_FAILED_CHECK_LINE=NONE'
+              printf '%s\n' 'PROVIDER_QUERY_BUFFER_CAUSAL_FIX=PASS'
+            } > "$output/accepted.txt"
+
+            (
+              cd "$output"
+              sha256sum \
+                accepted.txt \
+                manifest.txt \
+                06_verify-win32-provider.log \
+                verify-all.stdout.log \
+                > SHA256SUMS
+              sha256sum -c SHA256SUMS
+            )
+
+            printf '\n%s\n' \
+              'PR108 PROVIDER QUERY BUFFER R6: PASS'
+            printf 'FEATURE_HEAD=%s\n' "$head"
+            printf '%s\n' 'CANONICAL_VERIFY_ALL=PASS'
+            printf '%s\n' 'WIN32_PROVIDER_STANDALONE=PASS'
+            printf '%s\n' 'FIRST_FAILED_CHECK_LINE=NONE'
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr108-r6-output
+          destination: dblyatem-pr108-r6-output
+          when: always
+
+workflows:
+  pr108-provider-query-buffer-r6:
+    when: << pipeline.parameters.run_pr108_provider_query_buffer_r6 >>
+
+    jobs:
+      - pr108-provider-query-buffer-r6:
+          filters:
+            branches:
+              only:
+                - deadbyte/pr108-provider-query-buffer-r6
+            tags:
+              ignore: /.*/
