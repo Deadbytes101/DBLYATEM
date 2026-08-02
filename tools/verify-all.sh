@@ -3,6 +3,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 manifest=${DB_VERIFY_MANIFEST:-"$root/tools/verify-manifest.txt"}
+test_compiler_contract="$root/tools/test-compiler-contract.sh"
 mode=--run
 if [ "$#" -gt 1 ]; then
     printf '%s\n' 'usage: tools/verify-all.sh [--run|--contract]' >&2
@@ -105,6 +106,8 @@ validate_manifest()
     [ "$targets" = ' clean all test' ] ||
         fail 'full-tree targets must be clean, all, test in order'
     [ -f "$root/$full_tree" ] || fail "missing full-tree makefile: $full_tree"
+    [ -f "$test_compiler_contract" ] ||
+        fail 'missing standalone test compiler contract'
     [ -s "$scratch/standalone.manifest" ] || fail 'no standalone verifiers listed'
 
     duplicate=$(LC_ALL=C sort "$scratch/standalone.manifest" | uniq -d | sed -n '1p')
@@ -142,6 +145,7 @@ validate_manifest
 if [ "$mode" = '--contract' ]; then
     printf '%s\n' 'VERIFY ALL CONTRACT: PASS'
     printf '%s\n' 'FULL_TREE=GNUmakefile'
+    printf '%s\n' 'TEST_COMPILER_CONTRACT=tools/test-compiler-contract.sh'
     while IFS= read -r verifier; do
         printf 'STANDALONE=%s\n' "$verifier"
     done < "$scratch/standalone.manifest"
@@ -149,10 +153,13 @@ if [ "$mode" = '--contract' ]; then
     exit 0
 fi
 
-for command_name in git make gcc clang date mkdir rm cp sed sort uniq cmp; do
+for command_name in git make gcc clang date mkdir rm cp chmod sed sort uniq cmp; do
     command -v "$command_name" >/dev/null 2>&1 ||
         fail "required command not found: $command_name"
 done
+
+real_gcc=$(command -v gcc)
+real_clang=$(command -v clang)
 
 commit=$(git -C "$root" rev-parse --verify 'HEAD^{commit}') ||
     fail 'repository HEAD is unavailable'
@@ -161,8 +168,8 @@ tracked_dirty=$(git -C "$root" status --porcelain --untracked-files=no)
 
 mkdir -p "$evidence/logs"
 start_utc=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-gcc_version=$(gcc --version | sed -n '1p')
-clang_version=$(clang --version | sed -n '1p')
+gcc_version=$("$real_gcc" --version | sed -n '1p')
+clang_version=$("$real_clang" --version | sed -n '1p')
 
 {
     printf 'DBLYATEM_VERIFY_EVIDENCE_V1\n'
@@ -172,6 +179,7 @@ clang_version=$(clang --version | sed -n '1p')
     printf 'FULL_TREE_TARGETS=clean all test\n'
     printf 'GCC_VERSION=%s\n' "$gcc_version"
     printf 'CLANG_VERSION=%s\n' "$clang_version"
+    printf 'TEST_COMPILER_CONTRACT=tools/test-compiler-contract.sh\n'
     printf 'GITHUB_CI_CLAIM=NO\n'
 } > "$manifest_output"
 
@@ -225,6 +233,21 @@ run_step clang-clean \
 run_step clang-full-tree \
     'make -f GNUmakefile CC=clang all test' \
     make -f GNUmakefile CC=clang all test || exit $?
+
+compiler_contract_bin="$scratch/test-compiler-contract-bin"
+mkdir -p "$compiler_contract_bin"
+cp "$test_compiler_contract" "$compiler_contract_bin/gcc"
+cp "$test_compiler_contract" "$compiler_contract_bin/clang"
+chmod 700 "$compiler_contract_bin/gcc" "$compiler_contract_bin/clang"
+
+DB_TEST_REAL_GCC=$real_gcc
+DB_TEST_REAL_CLANG=$real_clang
+DB_TEST_ROOT=$root
+DB_TEST_WRITE_CONTRACT="$root/tests/test_write_contract.h"
+CC=clang
+PATH="$compiler_contract_bin:$PATH"
+export DB_TEST_REAL_GCC DB_TEST_REAL_CLANG DB_TEST_ROOT
+export DB_TEST_WRITE_CONTRACT CC PATH
 
 while IFS= read -r verifier; do
     name=$(basename -- "$verifier" .sh)
