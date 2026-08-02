@@ -17,9 +17,11 @@ static inline ssize_t db_test_write_contract(int descriptor,
         return write(descriptor, buffer, size);
     }
 
+#ifdef SSIZE_MAX
     if (size > (size_t)SSIZE_MAX) {
         _exit(2);
     }
+#endif
 
     while (offset < size) {
         const ssize_t written =
