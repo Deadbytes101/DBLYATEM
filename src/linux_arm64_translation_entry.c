@@ -107,9 +107,6 @@ db_linux_arm64_translation_entry_status
     db_linux_arm64_translation_context *context,
     db_linux_arm64_translation_entry_audit *audit)
 {
-    db_linux_arm64_translation_entry_audit completed;
-    uint64_t expected_return_count;
-
     if (state == NULL || context == NULL || audit == NULL) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_NULL_ARGUMENT;
     }
@@ -135,7 +132,8 @@ db_linux_arm64_translation_entry_status
     (void)entry_address;
     return DB_LINUX_ARM64_TRANSLATION_ENTRY_UNSUPPORTED_HOST;
 #else
-    expected_return_count =
+    db_linux_arm64_translation_entry_audit completed;
+    const uint64_t expected_return_count =
         context->terminal_return_count + UINT64_C(1);
 
     (void)memset(&completed, 0, sizeof(completed));
