@@ -2,12 +2,14 @@
 #include "dblyat/arm64_translation_benchmark.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #ifndef CLOCK_MONOTONIC_RAW
 #error CLOCK_MONOTONIC_RAW is required
@@ -212,6 +214,40 @@ static int record_lookup(
     return benchmark_status == DB_ARM64_TRANSLATION_BENCHMARK_OK;
 }
 
+static FILE *create_output_file(const char *path)
+{
+    const int descriptor = open(
+        path,
+        O_WRONLY | O_CREAT | O_EXCL,
+        (mode_t)0600);
+    FILE *file;
+
+    if (descriptor < 0) {
+        return NULL;
+    }
+
+    file = fdopen(descriptor, "wb");
+    if (file == NULL) {
+        (void)close(descriptor);
+        (void)remove(path);
+        return NULL;
+    }
+
+    return file;
+}
+
+static int finish_output_file(FILE *file, const char *path, int failed)
+{
+    failed |= fflush(file) != 0;
+    failed |= fclose(file) != 0;
+    if (failed != 0) {
+        (void)remove(path);
+        return 0;
+    }
+
+    return 1;
+}
+
 static int write_manifest(const char *path,
                           const char *runtime_id,
                           const char *runtime_build,
@@ -223,7 +259,7 @@ static int write_manifest(const char *path,
                           uint64_t iterations,
                           size_t sample_count)
 {
-    FILE *file = fopen(path, "wb");
+    FILE *file = create_output_file(path);
     int failed = 0;
 
     if (file == NULL) {
@@ -268,9 +304,7 @@ static int write_manifest(const char *path,
                       "PUBLISHED_BLOCK_EXECUTION=NO\n") < 0;
     failed |= fprintf(file,
                       "WINLATOR_COMPARISON=NOT_RUN\n") < 0;
-    failed |= fflush(file) != 0;
-    failed |= fclose(file) != 0;
-    return failed == 0;
+    return finish_output_file(file, path, failed);
 }
 
 static int write_csv(
@@ -286,7 +320,7 @@ static int write_csv(
         "duplicate_count,conflict_count,full_count,"
         "total_publication_probes,maximum_publication_probes,"
         "accepted_operation_count,rejected_operation_count\n";
-    FILE *file = fopen(path, "wb");
+    FILE *file = create_output_file(path);
     size_t index;
     int failed = 0;
 
@@ -352,9 +386,7 @@ static int write_csv(
             snapshot->rejected_operation_count) < 0;
     }
 
-    failed |= fflush(file) != 0;
-    failed |= fclose(file) != 0;
-    return failed == 0;
+    return finish_output_file(file, path, failed);
 }
 
 int main(int argc, char **argv)
@@ -472,9 +504,14 @@ int main(int argc, char **argv)
             argv[9],
             argv[10],
             iterations,
-            benchmark.count) ||
-        !write_csv(argv[2], &benchmark)) {
-        fprintf(stderr, "benchmark output failed\n");
+            benchmark.count)) {
+        fprintf(stderr, "benchmark manifest output failed\n");
+        return 6;
+    }
+
+    if (!write_csv(argv[2], &benchmark)) {
+        (void)remove(argv[1]);
+        fprintf(stderr, "benchmark CSV output failed\n");
         return 6;
     }
 
