@@ -116,6 +116,62 @@ static int test_malformed_session(void)
     return 0;
 }
 
+static int test_impossible_probe_metrics(void)
+{
+    arm64_translation_reuse_fixture value;
+    arm64_translation_reuse_fixture before;
+
+    CHECK(arm64_translation_reuse_fixture_init(&value));
+    value.session.next_sequence = 3u;
+    value.session.lookup_count = 2u;
+    value.session.hit_count = 2u;
+    value.session.total_lookup_probes = 2u;
+    value.session.maximum_lookup_probes = 2u;
+    value.session.accepted_operation_count = 2u;
+    before = value;
+    CHECK(arm64_translation_reuse_lookup_fixture(&value) ==
+          DB_ARM64_TRANSLATION_REUSE_BAD_SESSION);
+    CHECK(arm64_translation_reuse_fixture_unchanged(&value, &before));
+
+    CHECK(arm64_translation_reuse_fixture_init(&value));
+    value.session.next_sequence = 3u;
+    value.session.lookup_count = 2u;
+    value.session.hit_count = 2u;
+    value.session.total_lookup_probes = 5u;
+    value.session.maximum_lookup_probes = 2u;
+    value.session.accepted_operation_count = 2u;
+    before = value;
+    CHECK(arm64_translation_reuse_lookup_fixture(&value) ==
+          DB_ARM64_TRANSLATION_REUSE_BAD_SESSION);
+    CHECK(arm64_translation_reuse_fixture_unchanged(&value, &before));
+
+    CHECK(arm64_translation_reuse_fixture_init(&value));
+    value.session.next_sequence = 3u;
+    value.session.publication_count = 2u;
+    value.session.duplicate_count = 2u;
+    value.session.total_publication_probes = 2u;
+    value.session.maximum_publication_probes = 2u;
+    value.session.accepted_operation_count = 2u;
+    before = value;
+    CHECK(arm64_translation_reuse_publish_fixture(&value) ==
+          DB_ARM64_TRANSLATION_REUSE_BAD_SESSION);
+    CHECK(arm64_translation_reuse_fixture_unchanged(&value, &before));
+
+    CHECK(arm64_translation_reuse_fixture_init(&value));
+    value.session.next_sequence = 3u;
+    value.session.publication_count = 2u;
+    value.session.duplicate_count = 2u;
+    value.session.total_publication_probes = 5u;
+    value.session.maximum_publication_probes = 2u;
+    value.session.accepted_operation_count = 2u;
+    before = value;
+    CHECK(arm64_translation_reuse_publish_fixture(&value) ==
+          DB_ARM64_TRANSLATION_REUSE_BAD_SESSION);
+    CHECK(arm64_translation_reuse_fixture_unchanged(&value, &before));
+
+    return 0;
+}
+
 static int test_failure_preservation(void)
 {
     arm64_translation_reuse_fixture value;
@@ -212,11 +268,14 @@ int main(void)
     if (test_malformed_session() != 0) {
         return 2;
     }
-    if (test_failure_preservation() != 0) {
+    if (test_impossible_probe_metrics() != 0) {
         return 3;
     }
-    if (test_counter_overflow() != 0) {
+    if (test_failure_preservation() != 0) {
         return 4;
+    }
+    if (test_counter_overflow() != 0) {
+        return 5;
     }
 
     printf("ARM64 TRANSLATION REUSE VALIDATION TEST: PASS\n");
