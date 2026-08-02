@@ -1,0 +1,447 @@
+version: 2.1
+
+parameters:
+  run_main_arm64_evidence:
+    type: boolean
+    default: false
+
+jobs:
+  main-native-arm64-linux-evidence:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                make \
+                file \
+                util-linux \
+                coreutils \
+                findutils \
+                tar
+
+      - run:
+          name: Verify exact current main on native ARM64
+          command: |
+            set -euo pipefail
+
+            expected='1cfb7d6559dcac26905cea156afb11c4b016de74'
+            included_feature='98710959b2edb41c114ec7481e117eb7fd5b6cbd'
+            challenge='d74e01950e0ad55993bd23c6858fa9528d7d7892975489d49986aadbd3a9f804'
+
+            source='/tmp/dblyatem-main-source'
+            artifact_root='/tmp/dblyatem-main-arm64-artifacts'
+            evidence="$artifact_root/main-native-arm64-linux-evidence"
+
+            archive="$artifact_root/main-native-arm64-linux-evidence.tar.gz"
+            archive_checksum="${archive}.sha256"
+
+            host="$evidence/host.txt"
+            stdout_log="$evidence/verify-all.stdout.log"
+            accepted="$evidence/accepted.txt"
+
+            rm -rf "$source" "$artifact_root"
+            mkdir -p "$evidence"
+
+            git init --quiet "$source"
+
+            git -C "$source" remote add origin \
+              https://github.com/Deadbytes101/DBLYATEM.git
+
+            git -C "$source" fetch \
+              --quiet \
+              --depth=1 \
+              origin \
+              "$expected"
+
+            git -C "$source" checkout \
+              --quiet \
+              --detach \
+              FETCH_HEAD
+
+            head=$(git -C "$source" rev-parse HEAD)
+
+            tracked_dirty=$(
+              git -C "$source" status \
+                --porcelain=v1 \
+                --untracked-files=no
+            )
+
+            machine=$(uname -m)
+            page_size=$(getconf PAGESIZE)
+            shell_path=$(command -v sh)
+            shell_file=$(file -Lb "$shell_path")
+            operating_system=$(
+              uname -o 2>/dev/null ||
+              printf '%s' unknown
+            )
+            virtualization=$(
+              systemd-detect-virt 2>/dev/null ||
+              printf '%s' none
+            )
+
+            [ "$head" = "$expected" ] || {
+              printf 'EXPECTED=%s\n' "$expected"
+              printf 'ACTUAL=%s\n' "$head"
+              exit 90
+            }
+
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' \
+                'EXACT-HEAD CHECKOUT IS DIRTY'
+              printf '%s\n' "$tracked_dirty"
+              exit 91
+            }
+
+            case "$machine" in
+              aarch64|arm64)
+                ;;
+              *)
+                printf 'NOT NATIVE ARM64: %s\n' \
+                  "$machine"
+                exit 92
+                ;;
+            esac
+
+            [ "$page_size" = 4096 ] || {
+              printf 'UNEXPECTED PAGE SIZE: %s\n' \
+                "$page_size"
+              exit 93
+            }
+
+            [ ! -x /system/bin/getprop ] || {
+              printf '%s\n' \
+                'ANDROID DETECTED IN LINUX JOB'
+              exit 94
+            }
+
+            [ "$operating_system" != Android ] || {
+              printf '%s\n' \
+                'ANDROID DETECTED IN LINUX JOB'
+              exit 95
+            }
+
+            case "$shell_file" in
+              *AArch64*|*aarch64*)
+                ;;
+              *)
+                printf 'USERSPACE IS NOT AARCH64: %s\n' \
+                  "$shell_file"
+                exit 96
+                ;;
+            esac
+
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'SOFTWARE EMULATION REJECTED: %s\n' \
+                  "$virtualization"
+                exit 97
+                ;;
+            esac
+
+            {
+              printf '%s\n' \
+                'DBLYATEM_MAIN_CIRCLECI_ARM64_LINUX_V1'
+              printf 'SOURCE_HEAD=%s\n' "$head"
+              printf 'INCLUDED_FEATURE_HEAD=%s\n' \
+                "$included_feature"
+              printf 'FRESHNESS_CHALLENGE=%s\n' \
+                "$challenge"
+              printf '%s\n' \
+                'EXECUTION_PROVIDER=CIRCLECI'
+              printf 'CONFIG_HEAD=%s\n' \
+                "${CIRCLE_SHA1:-unknown}"
+              printf 'PIPELINE_NUMBER=%s\n' \
+                "${CIRCLE_PIPELINE_NUMBER:-unknown}"
+              printf 'WORKFLOW_ID=%s\n' \
+                "${CIRCLE_WORKFLOW_ID:-unknown}"
+              printf 'BUILD_NUMBER=%s\n' \
+                "${CIRCLE_BUILD_NUM:-unknown}"
+              printf 'BRANCH=%s\n' \
+                "${CIRCLE_BRANCH:-unknown}"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' \
+                "$page_size"
+              printf 'USERSPACE_FILE=%s\n' \
+                "$shell_file"
+              printf 'VIRTUALIZATION=%s\n' \
+                "$virtualization"
+              printf 'UNAME=%s\n' "$(uname -a)"
+              printf 'GCC_VERSION=%s\n' \
+                "$(gcc --version | sed -n '1p')"
+              printf 'CLANG_VERSION=%s\n' \
+                "$(clang --version | sed -n '1p')"
+              printf '%s\n' 'ANDROID=NO'
+              printf '%s\n' \
+                'FRESH_CHECKOUT_DIRTY=NO'
+            } > "$host"
+
+            lscpu > "$evidence/lscpu.txt"
+            cat /proc/cpuinfo > "$evidence/cpuinfo.txt"
+
+            set +e
+
+            (
+              cd "$source"
+              /bin/sh tools/verify-all.sh
+            ) > "$stdout_log" 2>&1
+
+            verify_status=$?
+
+            set -e
+
+            cat "$stdout_log"
+
+            [ "$verify_status" -eq 0 ] || {
+              printf 'VERIFY_ALL_EXIT=%s\n' \
+                "$verify_status"
+              exit "$verify_status"
+            }
+
+            verify_source="$source/build/verify-all"
+            manifest="$verify_source/manifest.txt"
+            step18="$verify_source/logs/18_verify-linux-arm64-wx-provider.log"
+
+            [ -f "$manifest" ] || {
+              printf '%s\n' \
+                'VERIFY-ALL MANIFEST MISSING'
+              exit 110
+            }
+
+            [ -f "$step18" ] || {
+              printf '%s\n' \
+                'CANONICAL STEP 18 LOG MISSING'
+              exit 111
+            }
+
+            grep -Fx \
+              "COMMIT_SHA=$expected" \
+              "$manifest" >/dev/null
+
+            grep -Fx \
+              'STEP_18_NAME=verify-linux-arm64-wx-provider' \
+              "$manifest" >/dev/null
+
+            grep -Fx \
+              'STEP_18_EXIT=0' \
+              "$manifest" >/dev/null
+
+            grep -Fx \
+              'FAILED_STEP=NONE' \
+              "$manifest" >/dev/null
+
+            grep -Fx \
+              'OVERALL_STATUS=PASS' \
+              "$manifest" >/dev/null
+
+            require_count()
+            {
+              line=$1
+              expected_count=$2
+              failure_code=$3
+
+              actual_count=$(
+                grep -Fxc "$line" "$step18" ||
+                true
+              )
+
+              [ "$actual_count" -eq "$expected_count" ] || {
+                printf 'LINE=%s\n' "$line"
+                printf 'EXPECTED_COUNT=%s\n' \
+                  "$expected_count"
+                printf 'ACTUAL_COUNT=%s\n' \
+                  "$actual_count"
+                exit "$failure_code"
+              }
+            }
+
+            require_count \
+              'LINUX ARM64 W^X MOCK TEST: PASS' \
+              3 \
+              120
+
+            require_count \
+              'LINUX W^X PERMISSION OBSERVATION: PASS' \
+              2 \
+              121
+
+            require_count \
+              'ARM64 PUBLISHED BLOCK TEST: PASS' \
+              3 \
+              122
+
+            require_count \
+              'ARM64 PUBLISHED BLOCK ENUM TEST: PASS' \
+              3 \
+              123
+
+            require_count \
+              'NATIVE AARCH64 EXECUTION: PASS' \
+              1 \
+              124
+
+            require_count \
+              'ANDROID ARM64 RUNTIME EVIDENCE: NOT CLAIMED' \
+              1 \
+              125
+
+            require_count \
+              'ARM64 PUBLISHED BLOCK VERIFY: PASS' \
+              1 \
+              126
+
+            require_count \
+              'ARM64 PUBLISHED BLOCK ENUM VERIFY: PASS' \
+              1 \
+              127
+
+            require_count \
+              'ARM64 CODE CACHE METADATA BOUNDARY: PASS' \
+              1 \
+              128
+
+            require_count \
+              'NO RWX TRANSITION VERIFY: PASS' \
+              1 \
+              129
+
+            require_count \
+              'LINUX ANDROID ARM64 W^X PROVIDER VERIFY: PASS' \
+              1 \
+              130
+
+            if grep -Fx \
+              'NATIVE AARCH64 EXECUTION: NOT CLAIMED' \
+              "$step18" >/dev/null
+            then
+              printf '%s\n' \
+                'NATIVE ARM64 FALSELY LEFT UNCLAIMED'
+              exit 131
+            fi
+
+            if grep -Fx \
+              'ANDROID ARM64 RUNTIME EVIDENCE: PASS' \
+              "$step18" >/dev/null
+            then
+              printf '%s\n' \
+                'LINUX JOB FALSELY CLAIMED ANDROID'
+              exit 132
+            fi
+
+            if grep -E \
+              '(^|: )(FAIL|FAILED)( |$)|AddressSanitizer:|UndefinedBehaviorSanitizer:|runtime error:' \
+              "$step18" >/dev/null
+            then
+              printf '%s\n' \
+                'FAILURE OR SANITIZER MARKER OBSERVED'
+              exit 133
+            fi
+
+            mkdir -p "$evidence/verify-all"
+
+            cp -a \
+              "$verify_source/." \
+              "$evidence/verify-all/"
+
+            {
+              printf '%s\n' \
+                'DBLYATEM_MAIN_NATIVE_ARM64_LINUX_EVIDENCE_ACCEPTED'
+              printf 'SOURCE_HEAD=%s\n' "$head"
+              printf 'INCLUDED_FEATURE_HEAD=%s\n' \
+                "$included_feature"
+              printf 'FRESHNESS_CHALLENGE=%s\n' \
+                "$challenge"
+              printf '%s\n' \
+                'EXECUTION_PROVIDER=CIRCLECI'
+              printf 'MACHINE=%s\n' "$machine"
+              printf '%s\n' \
+                'HOST_ARCH=AARCH64'
+              printf 'RUNTIME_PAGE_SIZE=%s\n' \
+                "$page_size"
+              printf '%s\n' 'ANDROID=NO'
+              printf '%s\n' 'QEMU_TCG=NO'
+              printf '%s\n' \
+                'FRESH_CHECKOUT_DIRTY=NO'
+              printf '%s\n' \
+                'CANONICAL_VERIFY_ALL=PASS'
+              printf '%s\n' \
+                'CANONICAL_STEP_18=PASS'
+              printf '%s\n' \
+                'NATIVE_AARCH64_EXECUTION=PASS'
+              printf '%s\n' \
+                'ANDROID_RUNTIME_EVIDENCE=NOT_CLAIMED'
+              printf '%s\n' \
+                'ARM64_PUBLISHED_BLOCK=PASS'
+              printf '%s\n' \
+                'NEGATIVE_ENUM_REGRESSION=PASS'
+              printf '%s\n' \
+                'NO_RWX_TRANSITION=PASS'
+              printf '%s\n' \
+                'NATIVE_MAIN_BASELINE=PASS'
+            } > "$accepted"
+
+            (
+              cd "$evidence"
+
+              find . \
+                -type f \
+                ! -name SHA256SUMS \
+                -print0 |
+                LC_ALL=C sort -z |
+                xargs -0 sha256sum \
+                > SHA256SUMS
+
+              sha256sum -c SHA256SUMS
+            )
+
+            tar -C "$artifact_root" \
+              -czf "$archive" \
+              main-native-arm64-linux-evidence
+
+            (
+              cd "$artifact_root"
+
+              sha256sum \
+                "$(basename "$archive")" \
+                > "$(basename "$archive_checksum")"
+            )
+
+            printf '\n%s\n' \
+              'DBLYATEM CURRENT MAIN NATIVE ARM64 BASELINE: PASS'
+            printf 'SOURCE_HEAD=%s\n' "$head"
+            printf 'MACHINE=%s\n' "$machine"
+            printf 'EVIDENCE=%s\n' "$evidence"
+
+      - store_artifacts:
+          path: /tmp/dblyatem-main-arm64-artifacts
+          destination: dblyatem-main-arm64-artifacts
+
+workflows:
+  main-native-arm64-linux-evidence:
+    when: << pipeline.parameters.run_main_arm64_evidence >>
+
+    jobs:
+      - main-native-arm64-linux-evidence:
+          filters:
+            branches:
+              only:
+                - deadbyte/main-arm64-evidence
+            tags:
+              ignore: /.*/
