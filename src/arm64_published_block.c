@@ -82,8 +82,11 @@ static bool block_valid(const db_x64_block_summary *block,
         block->record_count > block->instruction_budget ||
         block->record_count > block->output_capacity ||
         block->byte_count > block->byte_budget ||
+        block->stop_reason < DB_X64_BLOCK_STOP_TERMINATOR ||
         block->stop_reason > DB_X64_BLOCK_STOP_ADDRESS_INVALID ||
+        block->scalar_decode_status < DB_X64_DECODE_OK ||
         block->scalar_decode_status > DB_X64_DECODE_INVALID_ENCODING ||
+        block->memory_decode_status < DB_X64_MEMORY_INSTRUCTION_OK ||
         block->memory_decode_status >
             DB_X64_MEMORY_INSTRUCTION_INVALID_ENCODING ||
         !zero_bytes(block->reserved, sizeof(block->reserved)) ||
