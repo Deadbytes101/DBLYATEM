@@ -47,6 +47,6 @@ grep -F 'operation->full > 1u' "$core_source" >/dev/null
 grep -F 'operation.miss = UINT32_MAX' "$test_file" >/dev/null
 grep -F 'operation.inserted = 1u' "$test_file" >/dev/null
 
-printf '%s\n' 'ARM64 TRANSLATION BENCHMARK FLAG VALIDATION TEST: PASS'
+printf '%s\n' 'ARM64 TRANSLATION BENCHMARK FLAG VERIFY: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK BINARY OUTCOME FLAGS: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK WRAPAROUND REGRESSION: PASS'
