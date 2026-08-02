@@ -87,6 +87,8 @@ then
 fi
 
 grep -F 'CLOCK_MONOTONIC_RAW' "$runner_source" >/dev/null
+grep -F 'O_WRONLY | O_CREAT | O_EXCL' "$runner_source" >/dev/null
+grep -F '(void)remove(argv[1]);' "$runner_source" >/dev/null
 grep -F 'PUBLISHED_BLOCK_EXECUTION=NO' "$runner_source" >/dev/null
 grep -F 'WINLATOR_COMPARISON=NOT_RUN' "$runner_source" >/dev/null
 grep -F 'test_duration_overflow' \
@@ -109,6 +111,56 @@ fi
 
 for compiler in gcc clang
 do
+    collision="$temporary/collision-$compiler"
+    existing="$temporary/existing-$compiler"
+    unexpected_csv="$temporary/unexpected-$compiler.csv"
+
+    if "$temporary/runner-$compiler" \
+        "$collision" \
+        "$collision" \
+        1 \
+        DBLYATEM_VALIDATION \
+        ce198297c2a40e4e29e69889ac895b150f457527 \
+        circleci-arm-medium \
+        ubuntu-22.04 \
+        linux-kernel \
+        fixed-ci \
+        cold-ci >/dev/null 2>&1
+    then
+        printf '%s\n' \
+            'ARM64 TRANSLATION BENCHMARK VERIFY: identical output paths accepted' >&2
+        exit 1
+    fi
+    [ ! -e "$collision" ] || {
+        printf '%s\n' \
+            'ARM64 TRANSLATION BENCHMARK VERIFY: collision output not removed' >&2
+        exit 1
+    }
+
+    printf '%s\n' 'DO_NOT_OVERWRITE' > "$existing"
+    if "$temporary/runner-$compiler" \
+        "$existing" \
+        "$unexpected_csv" \
+        1 \
+        DBLYATEM_VALIDATION \
+        ce198297c2a40e4e29e69889ac895b150f457527 \
+        circleci-arm-medium \
+        ubuntu-22.04 \
+        linux-kernel \
+        fixed-ci \
+        cold-ci >/dev/null 2>&1
+    then
+        printf '%s\n' \
+            'ARM64 TRANSLATION BENCHMARK VERIFY: existing output accepted' >&2
+        exit 1
+    fi
+    grep -Fx 'DO_NOT_OVERWRITE' "$existing" >/dev/null
+    [ ! -e "$unexpected_csv" ] || {
+        printf '%s\n' \
+            'ARM64 TRANSLATION BENCHMARK VERIFY: partial CSV created' >&2
+        exit 1
+    }
+
     manifest="$temporary/manifest-$compiler.txt"
     csv="$temporary/raw-$compiler.csv"
     output="$temporary/runner-$compiler.log"
@@ -180,6 +232,7 @@ grep -Fx 'STANDALONE=tools/verify-arm64-translation-benchmark.sh' \
 
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK VERIFY: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK RECORD CONTRACT: PASS'
+printf '%s\n' 'ARM64 TRANSLATION BENCHMARK OUTPUT PAIR: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK RAW CSV V1: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK MONOTONIC RAW RUNNER: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK NONEXECUTING BOUNDARY: PASS'
