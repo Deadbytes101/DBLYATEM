@@ -164,6 +164,51 @@ cmp -s "$temporary/production.expected" "$production_capture" || {
     exit 1
 }
 
+probe_root="$temporary/probe-project"
+mkdir -p "$probe_root/tests"
+cat > "$probe_root/tests/compiler_contract_probe_test.c" <<'PROBE_SOURCE'
+#include <unistd.h>
+
+int main(void)
+{
+    (void)write(STDOUT_FILENO, "", 0u);
+    return 0;
+}
+PROBE_SOURCE
+
+real_gcc=$(command -v gcc)
+real_clang=$(command -v clang)
+
+(
+    cd "$probe_root"
+    DB_TEST_REAL_GCC="$real_gcc" \
+    DB_TEST_REAL_CLANG="$real_clang" \
+    DB_TEST_ROOT="$probe_root" \
+    DB_TEST_WRITE_CONTRACT="$contract_header" \
+        "$wrapper_directory/gcc" \
+            -std=c11 -O2 \
+            -Wall -Wextra -Wpedantic -Werror \
+            -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+            tests/compiler_contract_probe_test.c \
+            -o "$temporary/gcc-contract-probe"
+)
+"$temporary/gcc-contract-probe" >/dev/null
+
+(
+    cd "$probe_root"
+    DB_TEST_REAL_GCC="$real_gcc" \
+    DB_TEST_REAL_CLANG="$real_clang" \
+    DB_TEST_ROOT="$probe_root" \
+    DB_TEST_WRITE_CONTRACT="$contract_header" \
+        "$wrapper_directory/clang" \
+            -std=c11 -O2 \
+            -Wall -Wextra -Wpedantic -Werror \
+            -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+            tests/compiler_contract_probe_test.c \
+            -o "$temporary/clang-contract-probe"
+)
+"$temporary/clang-contract-probe" >/dev/null
+
 if DB_TEST_REAL_GCC="$fake_compiler" \
    DB_TEST_REAL_CLANG="$fake_compiler" \
    DB_TEST_ROOT="$root" \
