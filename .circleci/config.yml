@@ -46,7 +46,7 @@ jobs:
 
             repository='https://github.com/Deadbytes101/DBLYATEM.git'
             expected_feature='97948db80ef6ad000884b8462ccbbb202ae2ff96'
-            expected_config='${CIRCLE_SHA1}'
+            expected_config="${CIRCLE_SHA1}"
             expected_challenge='fa32d4f7546a88f8caa815804a2d16c0dc5d8d86b2fd9446ebccc061eefa7ac7'
 
             checkout='/tmp/dblyatem-pr112-r1-checkout'
