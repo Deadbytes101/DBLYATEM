@@ -378,6 +378,10 @@ db_arm64_block_cache_status db_arm64_block_cache_lookup(
         return DB_ARM64_BLOCK_CACHE_BUFFER_OVERLAP;
     }
 
+    if (!cache_full_valid(cache, &slot_bytes)) {
+        return DB_ARM64_BLOCK_CACHE_BAD_CACHE;
+    }
+
     home = key_home(guest_source_rip,
                     source_generation,
                     translation_key,

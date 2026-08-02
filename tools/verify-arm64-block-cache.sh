@@ -8,6 +8,7 @@ trap 'rm -rf "$temporary"' 0 HUP INT TERM
 common_flags='-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wshadow -Wstrict-prototypes -Wmissing-prototypes'
 source_file="$root/src/arm64_block_cache.c"
 test_file="$root/tests/arm64_block_cache_test.c"
+lookup_test_file="$root/tests/arm64_block_cache_lookup_validation_test.c"
 header_file="$root/include/dblyat/arm64_block_cache.h"
 
 for compiler in gcc clang
@@ -22,6 +23,12 @@ do
         "$test_file" "$source_file" \
         -o "$temporary/test-$compiler"
     "$temporary/test-$compiler"
+
+    # shellcheck disable=SC2086
+    "$compiler" -I"$root/include" $common_flags \
+        "$lookup_test_file" "$source_file" \
+        -o "$temporary/lookup-test-$compiler"
+    "$temporary/lookup-test-$compiler"
 done
 
 # shellcheck disable=SC2086
@@ -32,8 +39,15 @@ gcc -I"$root/include" $common_flags \
 ASAN_OPTIONS=detect_leaks=1 "$temporary/test-sanitize"
 
 # shellcheck disable=SC2086
+gcc -I"$root/include" $common_flags \
+    -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+    "$lookup_test_file" "$source_file" \
+    -o "$temporary/lookup-test-sanitize"
+ASAN_OPTIONS=detect_leaks=1 "$temporary/lookup-test-sanitize"
+
+# shellcheck disable=SC2086
 clang -I"$root/include" $common_flags \
-    --analyze "$test_file" "$source_file"
+    --analyze "$test_file" "$lookup_test_file" "$source_file"
 
 if grep -E \
     '(^|[^[:alnum:]_])(malloc|calloc|realloc|free|mmap|munmap|mprotect|VirtualAlloc|VirtualProtect|pthread_|atomic_|__atomic|__sync|PROT_EXEC|MAP_JIT|clear_cache)([^[:alnum:]_]|$)' \
@@ -56,7 +70,11 @@ grep -F \
 grep -F \
     'DB_ARM64_BLOCK_CACHE_NOT_FOUND' \
     "$test_file" >/dev/null
+grep -F \
+    'DB_ARM64_BLOCK_CACHE_BAD_CACHE' \
+    "$lookup_test_file" >/dev/null
 
 printf '%s\n' 'ARM64 BLOCK CACHE VERIFY: PASS'
 printf '%s\n' 'DETERMINISTIC BLOCK CACHE PROBE VERIFY: PASS'
+printf '%s\n' 'ARM64 BLOCK CACHE FULL-TABLE LOOKUP VALIDATION: PASS'
 printf '%s\n' 'ARM64 BLOCK CACHE NONEXECUTING BOUNDARY: PASS'
