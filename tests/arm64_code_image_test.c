@@ -163,7 +163,7 @@ static int test_alias_and_address_overflow(void)
               (uint8_t *)(void *)&plan, sizeof(uint32_t), &plan) ==
           DB_ARM64_CODE_IMAGE_BUFFER_OVERLAP);
     CHECK(db_arm64_code_image_build(
-              words, 1025u, UINT64_C(0x00007ffffffff000), 0u,
+              words, 1025u, UINT64_C(0x0000fffffffff000), 0u,
               UINT64_C(4096), output, sizeof(output), &plan) ==
           DB_ARM64_CODE_IMAGE_SIZE_OVERFLOW);
     CHECK(db_arm64_code_image_build(
