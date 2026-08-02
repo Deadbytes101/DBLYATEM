@@ -20,3 +20,5 @@ STANDALONE=tools/verify-arm64-block-cache.sh
 STANDALONE=tools/verify-arm64-translation-reuse.sh
 STANDALONE=tools/verify-arm64-translation-benchmark.sh
 STANDALONE=tools/verify-arm64-translation-benchmark-flags.sh
+STANDALONE=tools/verify-linux-arm64-translation-entry.sh
+STANDALONE=tools/verify-arm64-host-address-contract.sh
