@@ -4,7 +4,19 @@
 #include <stdint.h>
 #include <unistd.h>
 
-#define CHECK(value) do { if (!(value)) return 0; } while (0)
+#define DB_STRINGIFY_INNER(value) #value
+#define DB_STRINGIFY(value) DB_STRINGIFY_INNER(value)
+#define CHECK(value)                                                        \
+    do {                                                                    \
+        if (!(value)) {                                                     \
+            static const char failure[] =                                   \
+                "WIN32 PROVIDER CHECK FAILED: " DB_STRINGIFY(__LINE__) "\n"; \
+            const ssize_t written =                                         \
+                write(STDERR_FILENO, failure, sizeof(failure) - 1u);         \
+            (void)written;                                                  \
+            return 0;                                                       \
+        }                                                                   \
+    } while (0)
 
 static void fill(void *data, size_t size, uint8_t value)
 {
