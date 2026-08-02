@@ -1,0 +1,449 @@
+version: 2.1
+
+parameters:
+  run_pr108_final_arm64_r9:
+    type: boolean
+    default: false
+
+jobs:
+  pr108-final-arm64-r9:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                make \
+                file \
+                util-linux \
+                coreutils \
+                grep \
+                sed \
+                tar
+
+      - run:
+          name: Verify final PR108 head on native ARM64
+          command: |
+            set -euo pipefail
+
+            expected='24651ea298427c3de8c583a9131b319c1f5c38e9'
+            challenge='7e417de9247ac13f75f6ebce4d34f589da1146893f358ebc520ff33fcea25f3a'
+            source='/tmp/dblyatem-pr108-r9-source'
+            evidence='/tmp/pr108-final-arm64-r9'
+            artifacts='/tmp/dblyatem-pr108-r9-artifacts'
+            stdout_log="$evidence/verify-all.stdout.log"
+
+            rm -rf "$source" "$evidence" "$artifacts"
+            mkdir -p "$evidence" "$artifacts"
+
+            seal_artifacts()
+            {
+              (
+                cd "$evidence"
+                find . \
+                  -type f \
+                  ! -name SHA256SUMS \
+                  -print0 | \
+                  LC_ALL=C sort -z | \
+                  xargs -0 sha256sum \
+                  > SHA256SUMS
+                sha256sum -c SHA256SUMS
+              )
+
+              tar \
+                -C /tmp \
+                -czf "$artifacts/pr108-final-arm64-r9.tar.gz" \
+                pr108-final-arm64-r9
+
+              (
+                cd "$artifacts"
+                sha256sum pr108-final-arm64-r9.tar.gz \
+                  > pr108-final-arm64-r9.tar.gz.sha256
+                sha256sum -c pr108-final-arm64-r9.tar.gz.sha256
+              )
+            }
+
+            git init --quiet "$source"
+            git -C "$source" remote add origin \
+              https://github.com/Deadbytes101/DBLYATEM.git
+            git -C "$source" fetch \
+              --quiet \
+              --depth=1 \
+              origin \
+              "$expected"
+            git -C "$source" checkout \
+              --quiet \
+              --detach \
+              FETCH_HEAD
+
+            head=$(git -C "$source" rev-parse HEAD)
+            tracked_dirty=$(git -C "$source" status \
+              --porcelain=v1 \
+              --untracked-files=no)
+            machine=$(uname -m)
+            page_size=$(getconf PAGESIZE)
+            shell_file=$(file -Lb "$(command -v sh)")
+            virtualization=$(systemd-detect-virt 2>/dev/null || printf '%s' none)
+            operating_system=$(uname -o 2>/dev/null || printf '%s' unknown)
+
+            [ "$head" = "$expected" ] || {
+              printf 'HEAD_MISMATCH expected=%s actual=%s\n' \
+                "$expected" "$head"
+              exit 90
+            }
+
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'TRACKED CHECKOUT DIRTY'
+              printf '%s\n' "$tracked_dirty"
+              exit 91
+            }
+
+            case "$machine" in
+              aarch64|arm64) ;;
+              *)
+                printf 'NOT NATIVE ARM64: %s\n' "$machine"
+                exit 92
+                ;;
+            esac
+
+            [ "$page_size" = 4096 ] || {
+              printf 'UNEXPECTED PAGE SIZE: %s\n' "$page_size"
+              exit 93
+            }
+
+            case "$shell_file" in
+              *AArch64*|*aarch64*) ;;
+              *)
+                printf 'USERSPACE IS NOT AARCH64: %s\n' "$shell_file"
+                exit 94
+                ;;
+            esac
+
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'SOFTWARE EMULATION REJECTED: %s\n' "$virtualization"
+                exit 95
+                ;;
+            esac
+
+            [ "$operating_system" != Android ] || {
+              printf '%s\n' 'ANDROID HOST REJECTED FOR LINUX R9'
+              exit 96
+            }
+
+            {
+              printf '%s\n' 'DBLYATEM_PR108_FINAL_ARM64_R9_HOST'
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'CONFIG_HEAD=%s\n' "${CIRCLE_SHA1:-unknown}"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf 'SHELL_FILE=%s\n' "$shell_file"
+              printf 'VIRTUALIZATION=%s\n' "$virtualization"
+              printf 'OPERATING_SYSTEM=%s\n' "$operating_system"
+              printf 'FRESH_CHECKOUT_DIRTY=NO\n'
+            } | tee "$evidence/host.txt"
+
+            check_file="$source/tests/test_write_contract.h"
+            provider_test="$source/tests/win32_provider_test.c"
+            contract_test="$source/tests/verify_all_contract_test.sh"
+
+            gnu_line=$(grep -n '^#define _GNU_SOURCE$' "$check_file" | \
+              sed -n '1s/:.*//p')
+            include_line=$(grep -n '^#include ' "$check_file" | \
+              sed -n '1s/:.*//p')
+
+            [ -n "$gnu_line" ] || {
+              printf '%s\n' 'GNU FEATURE MACRO DEFINITION MISSING'
+              exit 100
+            }
+
+            [ -n "$include_line" ] || {
+              printf '%s\n' 'TEST WRITE CONTRACT INCLUDE MISSING'
+              exit 101
+            }
+
+            [ "$gnu_line" -lt "$include_line" ] || {
+              printf 'GNU FEATURE MACRO ORDER INVALID macro=%s include=%s\n' \
+                "$gnu_line" "$include_line"
+              exit 102
+            }
+
+            grep -Fx \
+              '#define CHECK(value) do { if (!(value)) return 0; } while (0)' \
+              "$provider_test" >/dev/null
+
+            if grep -F \
+              'WIN32 PROVIDER CHECK FAILED:' \
+              "$provider_test" >/dev/null
+            then
+              printf '%s\n' 'PROVIDER DIAGNOSTIC REPORTING STILL PRESENT'
+              exit 103
+            fi
+
+            if grep -F \
+              'static void copy_bytes' \
+              "$provider_test" >/dev/null
+            then
+              printf '%s\n' 'NONCAUSAL PADDING EXPERIMENT STILL PRESENT'
+              exit 104
+            fi
+
+            grep -F \
+              'char oversized_module[DB_WIN32_PROVIDER_MODULE_CAPACITY] = {0};' \
+              "$provider_test" >/dev/null
+            grep -F \
+              'oversized_module, sizeof(oversized_module),' \
+              "$provider_test" >/dev/null
+            grep -F \
+              'MAP_ANONYMOUS must remain visible after the forced test header' \
+              "$contract_test" >/dev/null
+            grep -F \
+              'tests/feature_macro_probe_test.c' \
+              "$contract_test" >/dev/null
+
+            {
+              printf '%s\n' 'DBLYATEM_PR108_R9_SOURCE_CONTRACT'
+              printf '%s\n' 'GNU_FEATURE_MACRO_BEFORE_SYSTEM_HEADERS=PASS'
+              printf '%s\n' 'PROVIDER_DIAGNOSTIC_REPORTING=REMOVED'
+              printf '%s\n' 'NONCAUSAL_PADDING_EXPERIMENT=REMOVED'
+              printf '%s\n' 'CAPACITY_SIZED_QUERY_BUFFER=PASS'
+              printf '%s\n' 'FEATURE_MACRO_REGRESSION_PROBE=PRESENT'
+              printf '%s\n' 'PRODUCTION_SOURCE_CHANGED=NO'
+            } > "$evidence/source-contract.txt"
+
+            mkdir -p \
+              "$evidence/source/tests" \
+              "$evidence/source/tools"
+            cp "$source/GNUmakefile" "$evidence/source/GNUmakefile"
+            cp "$source/tests/pe_test.c" \
+              "$evidence/source/tests/pe_test.c"
+            cp "$source/tests/test_write_contract.h" \
+              "$evidence/source/tests/test_write_contract.h"
+            cp "$source/tests/verify_all_contract_test.sh" \
+              "$evidence/source/tests/verify_all_contract_test.sh"
+            cp "$source/tests/win32_provider_test.c" \
+              "$evidence/source/tests/win32_provider_test.c"
+            cp "$source/tools/test-compiler-contract.sh" \
+              "$evidence/source/tools/test-compiler-contract.sh"
+            cp "$source/tools/verify-all.sh" \
+              "$evidence/source/tools/verify-all.sh"
+
+            set +e
+            (
+              cd "$source"
+              /bin/sh tools/verify-all.sh
+            ) > "$stdout_log" 2>&1
+            verify_status=$?
+            set -e
+
+            cat "$stdout_log"
+
+            verify_root="$source/build/verify-all"
+            manifest="$verify_root/manifest.txt"
+
+            if [ -d "$verify_root" ]; then
+              cp -a "$verify_root" "$evidence/verify-all"
+            fi
+
+            if [ "$verify_status" -ne 0 ]; then
+              printf 'FEATURE_HEAD=%s\n' "$head" \
+                > "$evidence/failure.txt"
+              printf 'VERIFY_ALL_EXIT=%s\n' "$verify_status" \
+                >> "$evidence/failure.txt"
+
+              if [ -f "$manifest" ]; then
+                failed_step=$(sed -n \
+                  's/^FAILED_STEP=//p' "$manifest" | tail -n 1)
+                printf 'FAILED_STEP=%s\n' "${failed_step:-unknown}" \
+                  >> "$evidence/failure.txt"
+                printf '\n%s\n' 'VERIFY-ALL FAILURE MANIFEST'
+                cat "$manifest"
+
+                if [ -n "${failed_step:-}" ]; then
+                  failed_log=$(find "$verify_root/logs" \
+                    -maxdepth 1 \
+                    -type f \
+                    -name "*_${failed_step}.log" \
+                    -print | \
+                    LC_ALL=C sort | \
+                    sed -n '1p')
+
+                  if [ -n "${failed_log:-}" ]; then
+                    printf '\n%s\n' 'VERIFY-ALL FAILED INTERNAL LOG'
+                    cat "$failed_log"
+                  fi
+                fi
+              else
+                printf '%s\n' 'FAILED_STEP=manifest-missing' \
+                  >> "$evidence/failure.txt"
+              fi
+
+              seal_artifacts
+              exit "$verify_status"
+            fi
+
+            [ -f "$manifest" ] || {
+              printf '%s\n' 'FINAL MANIFEST MISSING'
+              exit 110
+            }
+
+            contract_log="$verify_root/logs/01_contract-test.log"
+            gcc_log="$verify_root/logs/03_gcc-full-tree.log"
+            clang_log="$verify_root/logs/05_clang-full-tree.log"
+            provider_log="$verify_root/logs/06_verify-win32-provider.log"
+            step18_log="$verify_root/logs/18_verify-linux-arm64-wx-provider.log"
+
+            for required in \
+              "$contract_log" \
+              "$gcc_log" \
+              "$clang_log" \
+              "$provider_log" \
+              "$step18_log"
+            do
+              [ -f "$required" ] || {
+                printf 'FINAL REQUIRED LOG MISSING: %s\n' "$required"
+                exit 111
+              }
+            done
+
+            grep -Fx "COMMIT_SHA=$expected" "$manifest" >/dev/null
+            grep -Fx \
+              'TEST_COMPILER_CONTRACT=tools/test-compiler-contract.sh' \
+              "$manifest" >/dev/null
+            grep -Fx 'STEP_01_NAME=contract-test' "$manifest" >/dev/null
+            grep -Fx 'STEP_01_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'STEP_03_NAME=gcc-full-tree' "$manifest" >/dev/null
+            grep -Fx 'STEP_03_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'STEP_05_NAME=clang-full-tree' "$manifest" >/dev/null
+            grep -Fx 'STEP_05_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'STEP_06_NAME=verify-win32-provider' "$manifest" >/dev/null
+            grep -Fx 'STEP_06_EXIT=0' "$manifest" >/dev/null
+            grep -Fx \
+              'STEP_18_NAME=verify-linux-arm64-wx-provider' \
+              "$manifest" >/dev/null
+            grep -Fx 'STEP_18_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'FAILED_STEP=NONE' "$manifest" >/dev/null
+            grep -Fx 'OVERALL_STATUS=PASS' "$manifest" >/dev/null
+
+            grep -Fx 'VERIFY ALL CONTRACT TEST: PASS' \
+              "$contract_log" >/dev/null
+            grep -Fx 'PE TEST: PASS' "$gcc_log" >/dev/null
+            grep -Fx 'MAP TEST: PASS' "$gcc_log" >/dev/null
+            grep -Fx 'PE TEST: PASS' "$clang_log" >/dev/null
+            grep -Fx 'MAP TEST: PASS' "$clang_log" >/dev/null
+
+            provider_pass_count=$(grep -Fxc \
+              'WIN32 PROVIDER TEST: PASS' "$provider_log" || true)
+            [ "$provider_pass_count" -eq 3 ] || {
+              printf 'PROVIDER PASS COUNT MISMATCH: %s\n' \
+                "$provider_pass_count"
+              exit 112
+            }
+            grep -Fx 'WIN32 PROVIDER VERIFY: PASS' \
+              "$provider_log" >/dev/null
+
+            count_exact()
+            {
+              marker=$1
+              expected_count=$2
+              actual_count=$(grep -Fxc "$marker" "$step18_log" || true)
+              [ "$actual_count" -eq "$expected_count" ] || {
+                printf 'STEP18 MARKER COUNT MISMATCH marker=[%s] expected=%s actual=%s\n' \
+                  "$marker" "$expected_count" "$actual_count"
+                exit 113
+              }
+            }
+
+            count_exact 'LINUX ARM64 W^X MOCK TEST: PASS' 3
+            count_exact 'LINUX W^X PERMISSION OBSERVATION: PASS' 2
+            count_exact 'ARM64 PUBLISHED BLOCK TEST: PASS' 3
+            count_exact 'ARM64 PUBLISHED BLOCK ENUM TEST: PASS' 3
+            count_exact 'NATIVE AARCH64 EXECUTION: PASS' 1
+            count_exact 'ANDROID ARM64 RUNTIME EVIDENCE: NOT CLAIMED' 1
+            count_exact 'ARM64 PUBLISHED BLOCK VERIFY: PASS' 1
+            count_exact 'ARM64 PUBLISHED BLOCK ENUM VERIFY: PASS' 1
+            count_exact 'ARM64 CODE CACHE METADATA BOUNDARY: PASS' 1
+            count_exact 'NO RWX TRANSITION VERIFY: PASS' 1
+            count_exact 'LINUX ANDROID ARM64 W^X PROVIDER VERIFY: PASS' 1
+
+            if grep -R -E \
+              'WIN32 PROVIDER CHECK FAILED:|unused-result|undeclared identifier|AddressSanitizer:|UndefinedBehaviorSanitizer:|runtime error:|TEST: FAIL|VERIFY: FAIL' \
+              "$verify_root/logs" >/dev/null
+            then
+              printf '%s\n' 'FORBIDDEN FINAL LOG MARKER OBSERVED'
+              exit 114
+            fi
+
+            grep -Fx 'VERIFY ALL: PASS' "$stdout_log" >/dev/null
+
+            {
+              printf '%s\n' 'DBLYATEM_PR108_FINAL_ARM64_R9_ACCEPTED'
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'CONFIG_HEAD=%s\n' "${CIRCLE_SHA1:-unknown}"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf '%s\n' 'EXECUTION_PROVIDER=CIRCLECI'
+              printf '%s\n' 'HOST_ARCH=AARCH64'
+              printf '%s\n' 'RUNTIME_PAGE_SIZE=4096'
+              printf '%s\n' 'ANDROID=NO'
+              printf '%s\n' 'QEMU_TCG=NO'
+              printf '%s\n' 'PRODUCTION_SOURCE_CHANGED=NO'
+              printf '%s\n' 'STRICT_WARNING_POLICY=PRESERVED'
+              printf '%s\n' 'CAPACITY_SIZED_QUERY_BUFFER=PASS'
+              printf '%s\n' 'GNU_FEATURE_MACRO_ORDER=PASS'
+              printf '%s\n' 'FEATURE_MACRO_REGRESSION_PROBE=PASS'
+              printf '%s\n' 'PROVIDER_DIAGNOSTIC_REPORTING=REMOVED'
+              printf '%s\n' 'NONCAUSAL_PADDING_EXPERIMENT=REMOVED'
+              printf '%s\n' 'GCC_FULL_TREE=PASS'
+              printf '%s\n' 'CLANG_FULL_TREE=PASS'
+              printf '%s\n' 'WIN32_PROVIDER_STANDALONE=PASS'
+              printf '%s\n' 'CANONICAL_VERIFY_ALL=PASS'
+              printf '%s\n' 'NATIVE_AARCH64_EXECUTION=PASS'
+              printf '%s\n' 'PR108_FINAL_ARM64_R9=PASS'
+            } > "$evidence/accepted.txt"
+
+            seal_artifacts
+
+            printf '\n%s\n' 'PR108 FINAL ARM64 R9: PASS'
+            printf 'FEATURE_HEAD=%s\n' "$head"
+            printf 'CONFIG_HEAD=%s\n' "${CIRCLE_SHA1:-unknown}"
+            printf '%s\n' 'CANONICAL_VERIFY_ALL=PASS'
+            printf '%s\n' 'FEATURE_MACRO_REGRESSION_PROBE=PASS'
+            printf '%s\n' 'PROVIDER_DIAGNOSTIC_REPORTING=REMOVED'
+            printf '%s\n' 'NONCAUSAL_PADDING_EXPERIMENT=REMOVED'
+            printf '%s\n' 'NATIVE_AARCH64_EXECUTION=PASS'
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr108-r9-artifacts
+          destination: dblyatem-pr108-r9-artifacts
+          when: always
+
+workflows:
+  pr108-final-arm64-r9:
+    when: << pipeline.parameters.run_pr108_final_arm64_r9 >>
+
+    jobs:
+      - pr108-final-arm64-r9:
+          filters:
+            branches:
+              only:
+                - deadbyte/pr108-final-arm64-r9
+            tags:
+              ignore: /.*/
