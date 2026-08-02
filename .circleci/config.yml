@@ -1,0 +1,324 @@
+version: 2.1
+
+parameters:
+  run_pr108_arm64_evidence_r2:
+    type: boolean
+    default: false
+
+jobs:
+  pr108-native-arm64-evidence-r2:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                make \
+                file \
+                util-linux \
+                coreutils \
+                findutils \
+                tar
+
+      - run:
+          name: Verify exact PR108 R2 head on native ARM64
+          command: |
+            set -euo pipefail
+
+            expected='d72738f2c8e03f729d6b4c5b5830456d62b0a37f'
+            challenge='ed9432368f3c34585913dfdf96621629d8bb47a6b5e18b459a5317de4d76af30'
+
+            source='/tmp/dblyatem-pr108-r2-source'
+            artifact_root='/tmp/dblyatem-pr108-r2-artifacts'
+            evidence="$artifact_root/pr108-native-arm64-evidence-r2"
+            verify_stdout="$evidence/verify-all.stdout.log"
+
+            rm -rf "$source" "$artifact_root"
+            mkdir -p "$evidence"
+
+            git init --quiet "$source"
+            git -C "$source" remote add origin \
+              https://github.com/Deadbytes101/DBLYATEM.git
+            git -C "$source" fetch \
+              --quiet \
+              --depth=1 \
+              origin \
+              "$expected"
+            git -C "$source" checkout \
+              --quiet \
+              --detach \
+              FETCH_HEAD
+
+            head=$(git -C "$source" rev-parse HEAD)
+            tracked_dirty=$(git -C "$source" status \
+              --porcelain=v1 \
+              --untracked-files=no)
+            machine=$(uname -m)
+            page_size=$(getconf PAGESIZE)
+            shell_file=$(file -Lb "$(command -v sh)")
+            operating_system=$(uname -o 2>/dev/null || printf '%s' unknown)
+            virtualization=$(systemd-detect-virt 2>/dev/null || printf '%s' none)
+
+            [ "$head" = "$expected" ] || {
+              printf 'EXPECTED=%s\nACTUAL=%s\n' "$expected" "$head"
+              exit 90
+            }
+
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n%s\n' 'EXACT-HEAD CHECKOUT IS DIRTY' "$tracked_dirty"
+              exit 91
+            }
+
+            case "$machine" in
+              aarch64|arm64) ;;
+              *)
+                printf 'NOT NATIVE ARM64: %s\n' "$machine"
+                exit 92
+                ;;
+            esac
+
+            [ "$page_size" = 4096 ] || {
+              printf 'UNEXPECTED PAGE SIZE: %s\n' "$page_size"
+              exit 93
+            }
+
+            [ ! -x /system/bin/getprop ] || {
+              printf '%s\n' 'ANDROID DETECTED IN LINUX JOB'
+              exit 94
+            }
+
+            [ "$operating_system" != Android ] || {
+              printf '%s\n' 'ANDROID DETECTED IN LINUX JOB'
+              exit 95
+            }
+
+            case "$shell_file" in
+              *AArch64*|*aarch64*) ;;
+              *)
+                printf 'USERSPACE IS NOT AARCH64: %s\n' "$shell_file"
+                exit 96
+                ;;
+            esac
+
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'SOFTWARE EMULATION REJECTED: %s\n' "$virtualization"
+                exit 97
+                ;;
+            esac
+
+            {
+              printf '%s\n' 'DBLYATEM_PR108_R2_CIRCLECI_ARM64_V1'
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf '%s\n' 'EXECUTION_PROVIDER=CIRCLECI'
+              printf 'CONFIG_HEAD=%s\n' "${CIRCLE_SHA1:-unknown}"
+              printf 'PIPELINE_NUMBER=%s\n' "${CIRCLE_PIPELINE_NUMBER:-unknown}"
+              printf 'WORKFLOW_ID=%s\n' "${CIRCLE_WORKFLOW_ID:-unknown}"
+              printf 'BUILD_NUMBER=%s\n' "${CIRCLE_BUILD_NUM:-unknown}"
+              printf 'BRANCH=%s\n' "${CIRCLE_BRANCH:-unknown}"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf 'USERSPACE_FILE=%s\n' "$shell_file"
+              printf 'VIRTUALIZATION=%s\n' "$virtualization"
+              printf 'UNAME=%s\n' "$(uname -a)"
+              printf 'GCC_VERSION=%s\n' "$(gcc --version | sed -n '1p')"
+              printf 'CLANG_VERSION=%s\n' "$(clang --version | sed -n '1p')"
+              printf '%s\n' 'ANDROID=NO'
+              printf '%s\n' 'FRESH_CHECKOUT_DIRTY=NO'
+            } > "$evidence/host.txt"
+
+            lscpu > "$evidence/lscpu.txt"
+            cat /proc/cpuinfo > "$evidence/cpuinfo.txt"
+
+            set +e
+            (
+              cd "$source"
+              /bin/sh tools/verify-all.sh
+            ) > "$verify_stdout" 2>&1
+            verify_status=$?
+            set -e
+
+            cat "$verify_stdout"
+
+            verify_root="$source/build/verify-all"
+            manifest="$verify_root/manifest.txt"
+
+            if [ "$verify_status" -ne 0 ]; then
+              printf '\n%s\n' 'DBLYATEM PR108 R2 VERIFY-ALL FAILURE'
+              printf 'VERIFY_ALL_EXIT=%s\n' "$verify_status"
+
+              if [ -d "$verify_root" ]; then
+                mkdir -p "$evidence/verify-all-failure"
+                cp -a "$verify_root/." "$evidence/verify-all-failure/"
+              fi
+
+              failed_step=unknown
+              if [ -f "$manifest" ]; then
+                cat "$manifest"
+                failed_step=$(sed -n 's/^FAILED_STEP=//p' "$manifest" | tail -n 1)
+                printf 'FAILED_INTERNAL_STEP=%s\n' "${failed_step:-unknown}"
+
+                failed_log=$(find "$verify_root/logs" \
+                  -maxdepth 1 \
+                  -type f \
+                  -name "*_${failed_step}.log" \
+                  -print 2>/dev/null | \
+                  LC_ALL=C sort | \
+                  sed -n '1p')
+
+                if [ -n "${failed_log:-}" ]; then
+                  printf 'FAILED_INTERNAL_LOG=%s\n' "$failed_log"
+                  cat "$failed_log"
+                fi
+              fi
+
+              {
+                printf '%s\n' 'DBLYATEM_PR108_R2_NATIVE_ARM64_FAILURE_V1'
+                printf 'FEATURE_HEAD=%s\n' "$head"
+                printf 'CONFIG_HEAD=%s\n' "${CIRCLE_SHA1:-unknown}"
+                printf 'VERIFY_ALL_EXIT=%s\n' "$verify_status"
+                printf 'FAILED_INTERNAL_STEP=%s\n' "${failed_step:-unknown}"
+              } > "$evidence/failure.txt"
+
+              (
+                cd "$evidence"
+                find . \
+                  -type f \
+                  ! -name SHA256SUMS \
+                  -print0 | \
+                  LC_ALL=C sort -z | \
+                  xargs -0 sha256sum > SHA256SUMS
+                sha256sum -c SHA256SUMS
+              )
+
+              exit "$verify_status"
+            fi
+
+            [ -f "$manifest" ] || {
+              printf '%s\n' 'VERIFY-ALL MANIFEST MISSING'
+              exit 110
+            }
+
+            grep -Fx "COMMIT_SHA=$expected" "$manifest" >/dev/null
+            grep -Fx 'FAILED_STEP=NONE' "$manifest" >/dev/null
+            grep -Fx 'OVERALL_STATUS=PASS' "$manifest" >/dev/null
+            grep -Fx 'STEP_03_NAME=gcc-full-tree' "$manifest" >/dev/null
+            grep -Fx 'STEP_03_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'STEP_05_NAME=clang-full-tree' "$manifest" >/dev/null
+            grep -Fx 'STEP_05_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'STEP_18_NAME=verify-linux-arm64-wx-provider' "$manifest" >/dev/null
+            grep -Fx 'STEP_18_EXIT=0' "$manifest" >/dev/null
+
+            gcc_log="$verify_root/logs/03_gcc-full-tree.log"
+            clang_log="$verify_root/logs/05_clang-full-tree.log"
+            step18="$verify_root/logs/18_verify-linux-arm64-wx-provider.log"
+
+            [ -f "$gcc_log" ] || exit 111
+            [ -f "$clang_log" ] || exit 112
+            [ -f "$step18" ] || exit 113
+
+            grep -F -- '-include tests/test_write_contract.h' "$gcc_log" >/dev/null
+            grep -F -- '-include tests/test_write_contract.h' "$clang_log" >/dev/null
+            [ "$(grep -Fxc 'PE TEST: PASS' "$gcc_log" || true)" -eq 1 ] || exit 120
+            [ "$(grep -Fxc 'MAP TEST: PASS' "$gcc_log" || true)" -eq 1 ] || exit 121
+            [ "$(grep -Fxc 'PE TEST: PASS' "$clang_log" || true)" -eq 1 ] || exit 122
+            [ "$(grep -Fxc 'MAP TEST: PASS' "$clang_log" || true)" -eq 1 ] || exit 123
+            [ "$(grep -Fxc 'NATIVE AARCH64 EXECUTION: PASS' "$step18" || true)" -eq 1 ] || exit 124
+
+            if grep -F 'unused-result' "$gcc_log" >/dev/null; then
+              printf '%s\n' 'UNUSED-RESULT WARNING REMAINS IN GCC FULL TREE'
+              exit 125
+            fi
+
+            if grep -F 'unused-result' "$clang_log" >/dev/null; then
+              printf '%s\n' 'UNUSED-RESULT WARNING REMAINS IN CLANG FULL TREE'
+              exit 126
+            fi
+
+            if grep -Fx 'NATIVE AARCH64 EXECUTION: NOT CLAIMED' "$step18" >/dev/null; then
+              exit 127
+            fi
+
+            mkdir -p "$evidence/verify-all"
+            cp -a "$verify_root/." "$evidence/verify-all/"
+
+            {
+              printf '%s\n' 'DBLYATEM_PR108_R2_NATIVE_ARM64_EVIDENCE_ACCEPTED'
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf '%s\n' 'EXECUTION_PROVIDER=CIRCLECI'
+              printf '%s\n' 'HOST_ARCH=AARCH64'
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf '%s\n' 'ANDROID=NO'
+              printf '%s\n' 'QEMU_TCG=NO'
+              printf '%s\n' 'FRESH_CHECKOUT_DIRTY=NO'
+              printf '%s\n' 'GCC_FULL_TREE=PASS'
+              printf '%s\n' 'CLANG_FULL_TREE=PASS'
+              printf '%s\n' 'TEST_WRITE_CONTRACT=PASS'
+              printf '%s\n' 'PE_TEST=PASS'
+              printf '%s\n' 'MAP_TEST=PASS'
+              printf '%s\n' 'CANONICAL_VERIFY_ALL=PASS'
+              printf '%s\n' 'NATIVE_AARCH64_EXECUTION=PASS'
+              printf '%s\n' 'PR108_R2_NATIVE_ARM64_EVIDENCE=PASS'
+            } > "$evidence/accepted.txt"
+
+            (
+              cd "$evidence"
+              find . \
+                -type f \
+                ! -name SHA256SUMS \
+                -print0 | \
+                LC_ALL=C sort -z | \
+                xargs -0 sha256sum > SHA256SUMS
+              sha256sum -c SHA256SUMS
+            )
+
+            tar -C "$artifact_root" \
+              -czf "$artifact_root/pr108-native-arm64-evidence-r2.tar.gz" \
+              pr108-native-arm64-evidence-r2
+
+            (
+              cd "$artifact_root"
+              sha256sum pr108-native-arm64-evidence-r2.tar.gz \
+                > pr108-native-arm64-evidence-r2.tar.gz.sha256
+            )
+
+            printf '\n%s\n' 'DBLYATEM PR108 R2 NATIVE ARM64 EVIDENCE: PASS'
+            printf 'FEATURE_HEAD=%s\n' "$head"
+            printf 'MACHINE=%s\n' "$machine"
+            printf 'EVIDENCE=%s\n' "$evidence"
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr108-r2-artifacts
+          destination: dblyatem-pr108-r2-artifacts
+
+workflows:
+  pr108-native-arm64-evidence-r2:
+    when: << pipeline.parameters.run_pr108_arm64_evidence_r2 >>
+
+    jobs:
+      - pr108-native-arm64-evidence-r2:
+          filters:
+            branches:
+              only:
+                - deadbyte/pr108-arm64-evidence-r2
+            tags:
+              ignore: /.*/
