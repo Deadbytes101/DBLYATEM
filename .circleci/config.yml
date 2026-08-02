@@ -1,0 +1,211 @@
+version: 2.1
+
+parameters:
+  run_pr108_provider_line_diagnostic_r5:
+    type: boolean
+    default: false
+
+jobs:
+  pr108-provider-line-diagnostic-r5:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                make \
+                file \
+                util-linux \
+                coreutils \
+                findutils \
+                grep \
+                sed
+
+      - run:
+          name: Identify first failing provider assertion
+          command: |
+            set -euo pipefail
+
+            expected='d03a586f7de7bf9768b02873c9fc24b5d36cbef6'
+            challenge='9ef82759dc0ebfdff314df41f6bf9f26f1c57c9ad805c67d0738908cfbcac922'
+            source='/tmp/dblyatem-pr108-provider-r5-source'
+            output='/tmp/dblyatem-pr108-provider-r5-output'
+
+            rm -rf "$source" "$output"
+            mkdir -p "$output"
+
+            git init --quiet "$source"
+            git -C "$source" remote add origin \
+              https://github.com/Deadbytes101/DBLYATEM.git
+            git -C "$source" fetch \
+              --quiet \
+              --depth=1 \
+              origin \
+              "$expected"
+            git -C "$source" checkout \
+              --quiet \
+              --detach \
+              FETCH_HEAD
+
+            head=$(git -C "$source" rev-parse HEAD)
+            tracked_dirty=$(git -C "$source" status \
+              --porcelain=v1 \
+              --untracked-files=no)
+            machine=$(uname -m)
+            page_size=$(getconf PAGESIZE)
+            shell_file=$(file -Lb "$(command -v sh)")
+            virtualization=$(systemd-detect-virt 2>/dev/null || printf '%s' none)
+
+            [ "$head" = "$expected" ] || {
+              printf 'HEAD_MISMATCH expected=%s actual=%s\n' \
+                "$expected" "$head"
+              exit 90
+            }
+
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'TRACKED CHECKOUT DIRTY'
+              printf '%s\n' "$tracked_dirty"
+              exit 91
+            }
+
+            case "$machine" in
+              aarch64|arm64) ;;
+              *)
+                printf 'NOT NATIVE ARM64: %s\n' "$machine"
+                exit 92
+                ;;
+            esac
+
+            [ "$page_size" = 4096 ] || {
+              printf 'UNEXPECTED PAGE SIZE: %s\n' "$page_size"
+              exit 93
+            }
+
+            case "$shell_file" in
+              *AArch64*|*aarch64*) ;;
+              *)
+                printf 'USERSPACE IS NOT AARCH64: %s\n' "$shell_file"
+                exit 94
+                ;;
+            esac
+
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'SOFTWARE EMULATION REJECTED: %s\n' "$virtualization"
+                exit 95
+                ;;
+            esac
+
+            printf '%s\n' 'DBLYATEM_PR108_PROVIDER_LINE_DIAGNOSTIC_R5'
+            printf 'FEATURE_HEAD=%s\n' "$head"
+            printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+            printf 'MACHINE=%s\n' "$machine"
+            printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+            printf 'VIRTUALIZATION=%s\n' "$virtualization"
+
+            set +e
+            (
+              cd "$source"
+              /bin/sh tools/verify-all.sh
+            ) > "$output/verify-all.stdout.log" 2>&1
+            verify_status=$?
+            set -e
+
+            cat "$output/verify-all.stdout.log"
+
+            verify_root="$source/build/verify-all"
+            manifest="$verify_root/manifest.txt"
+            provider_log="$verify_root/logs/06_verify-win32-provider.log"
+
+            [ -f "$manifest" ] || {
+              printf '%s\n' 'VERIFY-ALL MANIFEST MISSING'
+              exit 110
+            }
+
+            [ -f "$provider_log" ] || {
+              printf '%s\n' 'WIN32 PROVIDER LOG MISSING'
+              exit 111
+            }
+
+            printf '\n%s\n' 'VERIFY-ALL MANIFEST'
+            cat "$manifest"
+            printf '\n%s\n' 'WIN32 PROVIDER STEP LOG'
+            cat "$provider_log"
+
+            cp "$manifest" "$output/manifest.txt"
+            cp "$provider_log" "$output/06_verify-win32-provider.log"
+
+            if [ "$verify_status" -eq 0 ]; then
+              printf '\n%s\n' \
+                'PR108 PROVIDER LINE DIAGNOSTIC R5: VERIFY-ALL PASS'
+              exit 0
+            fi
+
+            grep -Fx 'FAILED_STEP=verify-win32-provider' \
+              "$manifest" >/dev/null || {
+                printf '%s\n' \
+                  'UNEXPECTED FAILED STEP; PROVIDER DIAGNOSTIC NOT ACCEPTED'
+                exit 112
+              }
+
+            diagnostic_count=$(
+              grep -Ec \
+                '^WIN32 PROVIDER CHECK FAILED: [0-9]+$' \
+                "$provider_log" || true
+            )
+
+            [ "$diagnostic_count" -eq 1 ] || {
+              printf 'ASSERTION DIAGNOSTIC COUNT MISMATCH: %s\n' \
+                "$diagnostic_count"
+              exit 113
+            }
+
+            failed_line=$(
+              sed -n \
+                's/^WIN32 PROVIDER CHECK FAILED: \([0-9][0-9]*\)$/\1/p' \
+                "$provider_log"
+            )
+
+            printf '\n%s\n' \
+              'PR108 PROVIDER ASSERTION-LINE DIAGNOSTIC: PASS'
+            printf 'FEATURE_HEAD=%s\n' "$head"
+            printf 'FAILED_INTERNAL_STEP=verify-win32-provider\n'
+            printf 'FIRST_FAILED_CHECK_LINE=%s\n' "$failed_line"
+            printf 'VERIFY_ALL_EXIT=%s\n' "$verify_status"
+
+            exit "$verify_status"
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr108-provider-r5-output
+          destination: dblyatem-pr108-provider-r5-output
+          when: always
+
+workflows:
+  pr108-provider-line-diagnostic-r5:
+    when: << pipeline.parameters.run_pr108_provider_line_diagnostic_r5 >>
+
+    jobs:
+      - pr108-provider-line-diagnostic-r5:
+          filters:
+            branches:
+              only:
+                - deadbyte/pr108-provider-line-diagnostic-r5
+            tags:
+              ignore: /.*/
