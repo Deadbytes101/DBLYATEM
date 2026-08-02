@@ -1,0 +1,283 @@
+version: 2.1
+
+parameters:
+  run_pr112_arm64_translation_reuse_r1:
+    type: boolean
+    default: false
+
+jobs:
+  pr112-arm64-translation-reuse-r1:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                make \
+                file \
+                util-linux \
+                coreutils \
+                grep \
+                sed \
+                findutils \
+                tar
+
+      - run:
+          name: Verify exact PR112 head on native ARM64
+          command: |
+            set -euo pipefail
+
+            repository='https://github.com/Deadbytes101/DBLYATEM.git'
+            expected_feature='97948db80ef6ad000884b8462ccbbb202ae2ff96'
+            expected_config='${CIRCLE_SHA1}'
+            expected_challenge='fa32d4f7546a88f8caa815804a2d16c0dc5d8d86b2fd9446ebccc061eefa7ac7'
+
+            checkout='/tmp/dblyatem-pr112-r1-checkout'
+            output='/tmp/dblyatem-pr112-r1-output'
+            artifact_root='/tmp/dblyatem-pr112-r1-artifacts'
+            archive="$artifact_root/pr112-arm64-translation-reuse-r1.tar.gz"
+            outer_sum="$archive.sha256"
+
+            rm -rf "$checkout" "$output" "$artifact_root"
+            mkdir -p "$checkout" "$output" "$artifact_root"
+
+            machine=$(uname -m)
+            case "$machine" in
+              aarch64|arm64) ;;
+              *)
+                printf 'HOST ARCH REJECTED: %s\n' "$machine" >&2
+                exit 1
+                ;;
+            esac
+
+            page_size=$(getconf PAGESIZE)
+            [ "$page_size" = '4096' ] || {
+              printf 'PAGE SIZE REJECTED: %s\n' "$page_size" >&2
+              exit 1
+            }
+
+            shell_identity=$(file -L /bin/sh)
+            printf '%s\n' "$shell_identity" |
+              grep -Eiq 'aarch64|ARM aarch64' || {
+                printf 'NON-AARCH64 USERSPACE REJECTED: %s\n' "$shell_identity" >&2
+                exit 1
+              }
+
+            virtualization=$(systemd-detect-virt 2>/dev/null || true)
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'EMULATED HOST REJECTED: %s\n' "$virtualization" >&2
+                exit 1
+                ;;
+            esac
+
+            git init "$checkout"
+            git -C "$checkout" remote add origin "$repository"
+            git -C "$checkout" fetch --depth=1 origin "$expected_feature"
+            git -C "$checkout" checkout --detach FETCH_HEAD
+
+            observed_feature=$(git -C "$checkout" rev-parse HEAD)
+            [ "$observed_feature" = "$expected_feature" ] || {
+              printf 'FEATURE HEAD MISMATCH expected=%s actual=%s\n' \
+                "$expected_feature" "$observed_feature" >&2
+              exit 1
+            }
+
+            tracked_dirty=$(git -C "$checkout" status --porcelain --untracked-files=no)
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'FRESH CHECKOUT TRACKED DIRTY' >&2
+              exit 1
+            }
+
+            set +e
+            (
+              cd "$checkout"
+              /bin/sh tools/verify-all.sh
+            ) > "$output/verify-all.stdout.log" 2>&1
+            verify_status=$?
+            set -e
+
+            if [ -d "$checkout/build/verify-all" ]; then
+              cp -R "$checkout/build/verify-all" "$output/verify-all"
+            fi
+
+            {
+              printf 'DBLYATEM_PR112_ARM64_TRANSLATION_REUSE_R1_HOST\n'
+              printf 'FEATURE_HEAD=%s\n' "$observed_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf 'VIRTUALIZATION=%s\n' "${virtualization:-none}"
+              printf 'FRESH_CHECKOUT_DIRTY=NO\n'
+            } > "$output/host.txt"
+
+            [ "$verify_status" -eq 0 ] || {
+              cp "$output/verify-all.stdout.log" \
+                "$artifact_root/verify-all.failed.log"
+              printf 'VERIFY_ALL_EXIT=%s\n' "$verify_status" >&2
+              exit "$verify_status"
+            }
+
+            manifest="$output/verify-all/manifest.txt"
+            step18="$output/verify-all/logs/18_verify-linux-arm64-wx-provider.log"
+            step19="$output/verify-all/logs/19_verify-arm64-block-cache.log"
+            step20="$output/verify-all/logs/20_verify-arm64-translation-reuse.log"
+
+            for required in \
+              "$manifest" \
+              "$step18" \
+              "$step19" \
+              "$step20"
+            do
+              [ -f "$required" ] || {
+                printf 'REQUIRED EVIDENCE FILE MISSING: %s\n' "$required" >&2
+                exit 1
+              }
+            done
+
+            exact_line()
+            {
+              file_path=$1
+              expected=$2
+              actual=$(grep -Fxc "$expected" "$file_path" || true)
+              [ "$actual" -eq 1 ] || {
+                printf 'EXACT LINE MISMATCH file=%s line=[%s] expected=1 actual=%s\n' \
+                  "$file_path" "$expected" "$actual" >&2
+                exit 1
+              }
+            }
+
+            exact_count()
+            {
+              file_path=$1
+              expected=$2
+              count=$3
+              actual=$(grep -Fxc "$expected" "$file_path" || true)
+              [ "$actual" -eq "$count" ] || {
+                printf 'EXACT COUNT MISMATCH file=%s line=[%s] expected=%s actual=%s\n' \
+                  "$file_path" "$expected" "$count" "$actual" >&2
+                exit 1
+              }
+            }
+
+            exact_line "$manifest" "COMMIT_SHA=$expected_feature"
+            exact_line "$manifest" 'STEP_18_NAME=verify-linux-arm64-wx-provider'
+            exact_line "$manifest" 'STEP_18_EXIT=0'
+            exact_line "$manifest" 'STEP_19_NAME=verify-arm64-block-cache'
+            exact_line "$manifest" 'STEP_19_EXIT=0'
+            exact_line "$manifest" 'STEP_20_NAME=verify-arm64-translation-reuse'
+            exact_line "$manifest" 'STEP_20_EXIT=0'
+            exact_line "$manifest" 'FAILED_STEP=NONE'
+            exact_line "$manifest" 'OVERALL_STATUS=PASS'
+
+            exact_line "$output/verify-all.stdout.log" 'VERIFY ALL: PASS'
+            exact_line "$step18" 'NATIVE AARCH64 EXECUTION: PASS'
+            exact_line "$step19" 'ARM64 BLOCK CACHE VERIFY: PASS'
+
+            exact_count "$step20" 'ARM64 TRANSLATION REUSE TEST: PASS' 3
+            exact_count "$step20" 'ARM64 TRANSLATION REUSE OUTCOME TEST: PASS' 3
+            exact_count "$step20" 'ARM64 TRANSLATION REUSE REPLAY TEST: PASS' 3
+            exact_count "$step20" 'ARM64 TRANSLATION REUSE VALIDATION TEST: PASS' 3
+            exact_count "$step20" 'ARM64 TRANSLATION REUSE LOOKUP ALIAS TEST: PASS' 3
+            exact_count "$step20" 'ARM64 TRANSLATION REUSE PUBLISH ALIAS TEST: PASS' 3
+            exact_line "$step20" 'ARM64 TRANSLATION REUSE VERIFY: PASS'
+            exact_line "$step20" 'ARM64 TRANSLATION REUSE WORKLOAD METRICS: PASS'
+            exact_line "$step20" 'ARM64 TRANSLATION REUSE DETERMINISTIC REPLAY: PASS'
+            exact_line "$step20" 'ARM64 TRANSLATION REUSE TRANSACTIONAL BOUNDARY: PASS'
+            exact_line "$step20" 'ARM64 TRANSLATION REUSE NONEXECUTING BOUNDARY: PASS'
+
+            combined="$output/combined-logs.txt"
+            find "$output/verify-all/logs" -type f -name '*.log' -print0 |
+              sort -z |
+              xargs -0 cat > "$combined"
+
+            for forbidden in \
+              'unused-result' \
+              'undeclared identifier' \
+              'AddressSanitizer:' \
+              'UndefinedBehaviorSanitizer:' \
+              'runtime error:' \
+              'TEST: FAIL' \
+              'VERIFY: FAIL'
+            do
+              if grep -F "$forbidden" "$combined" >/dev/null; then
+                printf 'FORBIDDEN LOG MARKER: %s\n' "$forbidden" >&2
+                exit 1
+              fi
+            done
+
+            rm -f "$combined"
+
+            {
+              printf 'DBLYATEM_PR112_ARM64_TRANSLATION_REUSE_R1_ACCEPTED\n'
+              printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf 'EXECUTION_PROVIDER=CIRCLECI\n'
+              printf 'HOST_ARCH=AARCH64\n'
+              printf 'RUNTIME_PAGE_SIZE=4096\n'
+              printf 'CANONICAL_VERIFY_ALL=PASS\n'
+              printf 'VERIFY_STEP_20=PASS\n'
+              printf 'STRICT_GCC=PASS\n'
+              printf 'STRICT_CLANG=PASS\n'
+              printf 'ASAN_UBSAN=PASS\n'
+              printf 'CLANG_ANALYZER=PASS\n'
+              printf 'WORKLOAD_METRICS=PASS\n'
+              printf 'DETERMINISTIC_REPLAY=PASS\n'
+              printf 'TRANSACTIONAL_BOUNDARY=PASS\n'
+              printf 'NONEXECUTING_BOUNDARY=PASS\n'
+              printf 'NATIVE_AARCH64_EXECUTION=PASS\n'
+              printf 'PR112_ARM64_TRANSLATION_REUSE_R1=PASS\n'
+            } > "$output/accepted.txt"
+
+            (
+              cd "$output"
+              find . -type f ! -name SHA256SUMS -print0 |
+                LC_ALL=C sort -z |
+                xargs -0 sha256sum > SHA256SUMS
+            )
+
+            (
+              cd /tmp
+              tar -czf "$archive" dblyatem-pr112-r1-output
+            )
+            (
+              cd "$artifact_root"
+              sha256sum "$(basename "$archive")" > "$(basename "$outer_sum")"
+            )
+
+            printf '%s\n' 'PR112 R1 CIRCLECI VERIFY: PASS'
+            printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+            printf 'CONFIG_HEAD=%s\n' "$expected_config"
+            printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+            printf 'NATIVE_AARCH64_EXECUTION=PASS\n'
+            printf 'VERIFY_STEP_20=PASS\n'
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr112-r1-artifacts
+          destination: dblyatem-pr112-r1-artifacts
+          when: always
+
+workflows:
+  pr112-arm64-translation-reuse-r1:
+    when: << pipeline.parameters.run_pr112_arm64_translation_reuse_r1 >>
+    jobs:
+      - pr112-arm64-translation-reuse-r1
