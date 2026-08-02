@@ -20,13 +20,23 @@ static bool zero_bytes(const void *data, size_t size)
     return true;
 }
 
-bool db_x64_arm64_relocate_canonical_internal(uint64_t address)
+static bool x64_canonical_nonzero(uint64_t address)
 {
     const uint64_t upper = address >> 48u;
     const uint64_t sign = (address >> 47u) & UINT64_C(1);
 
     return address != 0u &&
            upper == (sign != 0u ? UINT64_C(0xffff) : UINT64_C(0));
+}
+
+bool db_x64_arm64_relocate_canonical_internal(uint64_t address)
+{
+    const uint64_t upper = address >> 48u;
+    const uint64_t sign = (address >> 47u) & UINT64_C(1);
+
+    return address != 0u &&
+           (upper == UINT64_C(0) ||
+            (upper == UINT64_C(0xffff) && sign != 0u));
 }
 
 bool db_x64_arm64_relocate_add_scaled_internal(
@@ -87,8 +97,7 @@ static bool scale_valid(uint8_t value)
 bool db_x64_arm64_relocate_record_valid_internal(
     const db_x64_arm64_relocation *relocation)
 {
-    return db_x64_arm64_relocate_canonical_internal(
-               relocation->source_rip) &&
+    return x64_canonical_nonzero(relocation->source_rip) &&
            (relocation->kind == DB_X64_ARM64_RELOCATION_CALL26 ||
             relocation->kind == DB_X64_ARM64_RELOCATION_JUMP26) &&
            relocation->helper > DB_X64_ARM64_HELPER_NONE &&

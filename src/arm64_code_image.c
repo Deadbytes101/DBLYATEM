@@ -29,7 +29,8 @@ static bool db_arm64_code_image_canonical_nonzero(uint64_t address)
     const uint64_t sign = (address >> 47u) & UINT64_C(1);
 
     return address != 0u &&
-           upper == (sign != 0u ? UINT64_C(0xffff) : UINT64_C(0));
+           (upper == UINT64_C(0) ||
+            (upper == UINT64_C(0xffff) && sign != 0u));
 }
 
 static bool db_arm64_code_image_page_size_valid(uint64_t page_size)
