@@ -120,7 +120,7 @@ do
         "$collision" \
         1 \
         DBLYATEM_VALIDATION \
-        ce198297c2a40e4e29e69889ac895b150f457527 \
+        validation-build-v1 \
         circleci-arm-medium \
         ubuntu-22.04 \
         linux-kernel \
@@ -143,7 +143,7 @@ do
         "$unexpected_csv" \
         1 \
         DBLYATEM_VALIDATION \
-        ce198297c2a40e4e29e69889ac895b150f457527 \
+        validation-build-v1 \
         circleci-arm-medium \
         ubuntu-22.04 \
         linux-kernel \
@@ -170,7 +170,7 @@ do
         "$csv" \
         4 \
         DBLYATEM_VALIDATION \
-        ce198297c2a40e4e29e69889ac895b150f457527 \
+        validation-build-v1 \
         circleci-arm-medium \
         ubuntu-22.04 \
         linux-kernel \
@@ -189,7 +189,7 @@ do
     grep -Fx 'FORMAT_VERSION=1' "$manifest" >/dev/null
     grep -Fx 'BENCHMARK=arm64-translation-reuse' "$manifest" >/dev/null
     grep -Fx 'RUNTIME_ID=DBLYATEM_VALIDATION' "$manifest" >/dev/null
-    grep -Fx 'RUNTIME_BUILD=ce198297c2a40e4e29e69889ac895b150f457527' "$manifest" >/dev/null
+    grep -Fx 'RUNTIME_BUILD=validation-build-v1' "$manifest" >/dev/null
     grep -Fx 'DEVICE_ID=circleci-arm-medium' "$manifest" >/dev/null
     grep -Fx 'PLATFORM_BUILD=ubuntu-22.04' "$manifest" >/dev/null
     grep -Fx 'DRIVER_BUILD=linux-kernel' "$manifest" >/dev/null
