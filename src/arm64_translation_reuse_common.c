@@ -2,6 +2,34 @@
 
 #include <string.h>
 
+static bool probe_metrics_valid(uint64_t operation_count,
+                                uint64_t total_probes,
+                                uint64_t maximum_probes)
+{
+    uint64_t minimum_total;
+    uint64_t maximum_total;
+
+    if (operation_count == 0u) {
+        return total_probes == 0u && maximum_probes == 0u;
+    }
+
+    if (maximum_probes == 0u ||
+        !db_arm64_translation_reuse_internal_add_u64(
+            maximum_probes,
+            operation_count - UINT64_C(1),
+            &minimum_total) ||
+        total_probes < minimum_total) {
+        return false;
+    }
+
+    if (operation_count > UINT64_MAX / maximum_probes) {
+        return true;
+    }
+
+    maximum_total = operation_count * maximum_probes;
+    return total_probes <= maximum_total;
+}
+
 bool db_arm64_translation_reuse_internal_zero_bytes(const void *data, size_t size)
 {
     const uint8_t *bytes = (const uint8_t *)data;
@@ -98,32 +126,13 @@ bool db_arm64_translation_reuse_internal_session_valid(
                  session->rejected_operation_count,
                  &completed_total) ||
         !db_arm64_translation_reuse_internal_add_u64(completed_total, UINT64_C(1), &expected_next) ||
-        expected_next != session->next_sequence) {
-        return false;
-    }
-
-    if (session->lookup_count == 0u) {
-        if (session->total_lookup_probes != 0u ||
-            session->maximum_lookup_probes != 0u) {
-            return false;
-        }
-    } else if (session->total_lookup_probes < session->lookup_count ||
-               session->maximum_lookup_probes == 0u ||
-               session->maximum_lookup_probes >
-                   session->total_lookup_probes) {
-        return false;
-    }
-
-    if (session->publication_count == 0u) {
-        if (session->total_publication_probes != 0u ||
-            session->maximum_publication_probes != 0u) {
-            return false;
-        }
-    } else if (session->total_publication_probes <
-                   session->publication_count ||
-               session->maximum_publication_probes == 0u ||
-               session->maximum_publication_probes >
-                   session->total_publication_probes) {
+        expected_next != session->next_sequence ||
+        !probe_metrics_valid(session->lookup_count,
+                             session->total_lookup_probes,
+                             session->maximum_lookup_probes) ||
+        !probe_metrics_valid(session->publication_count,
+                             session->total_publication_probes,
+                             session->maximum_publication_probes)) {
         return false;
     }
 
