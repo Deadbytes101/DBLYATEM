@@ -1,0 +1,254 @@
+version: 2.1
+
+parameters:
+  run_pr108_arm64_feature_macro_r8:
+    type: boolean
+    default: false
+
+jobs:
+  pr108-arm64-feature-macro-r8:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                make \
+                file \
+                util-linux \
+                coreutils \
+                grep \
+                sed
+
+      - run:
+          name: Verify feature macro ordering on native ARM64
+          command: |
+            set -euo pipefail
+
+            expected='6a8c65ff570e2439c1ee422f61ab40ed31b55ac0'
+            challenge='8d8ac84cba85546d94766a24d181ecc423c57874ce399cba5803c9ea3ba5694e'
+            source='/tmp/dblyatem-pr108-r8-source'
+            output='/tmp/dblyatem-pr108-r8-output'
+            compiler_bin='/tmp/dblyatem-pr108-r8-compiler-bin'
+            log="$output/18_verify-linux-arm64-wx-provider.log"
+
+            rm -rf "$source" "$output" "$compiler_bin"
+            mkdir -p "$output" "$compiler_bin"
+
+            git init --quiet "$source"
+            git -C "$source" remote add origin \
+              https://github.com/Deadbytes101/DBLYATEM.git
+            git -C "$source" fetch \
+              --quiet \
+              --depth=1 \
+              origin \
+              "$expected"
+            git -C "$source" checkout \
+              --quiet \
+              --detach \
+              FETCH_HEAD
+
+            head=$(git -C "$source" rev-parse HEAD)
+            tracked_dirty=$(git -C "$source" status \
+              --porcelain=v1 \
+              --untracked-files=no)
+            machine=$(uname -m)
+            page_size=$(getconf PAGESIZE)
+            shell_file=$(file -Lb "$(command -v sh)")
+            virtualization=$(systemd-detect-virt 2>/dev/null || printf '%s' none)
+
+            [ "$head" = "$expected" ] || {
+              printf 'HEAD_MISMATCH expected=%s actual=%s\n' \
+                "$expected" "$head"
+              exit 90
+            }
+
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'TRACKED CHECKOUT DIRTY'
+              printf '%s\n' "$tracked_dirty"
+              exit 91
+            }
+
+            case "$machine" in
+              aarch64|arm64) ;;
+              *)
+                printf 'NOT NATIVE ARM64: %s\n' "$machine"
+                exit 92
+                ;;
+            esac
+
+            [ "$page_size" = 4096 ] || {
+              printf 'UNEXPECTED PAGE SIZE: %s\n' "$page_size"
+              exit 93
+            }
+
+            case "$shell_file" in
+              *AArch64*|*aarch64*) ;;
+              *)
+                printf 'USERSPACE IS NOT AARCH64: %s\n' "$shell_file"
+                exit 94
+                ;;
+            esac
+
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'SOFTWARE EMULATION REJECTED: %s\n' "$virtualization"
+                exit 95
+                ;;
+            esac
+
+            grep -Fx '#define _GNU_SOURCE' \
+              "$source/tests/test_write_contract.h" >/dev/null || {
+                printf '%s\n' \
+                  'TEST WRITE CONTRACT GNU FEATURE MACRO MISSING'
+                exit 96
+              }
+
+            real_gcc=$(command -v gcc)
+            real_clang=$(command -v clang)
+
+            cp "$source/tools/test-compiler-contract.sh" \
+              "$compiler_bin/gcc"
+            cp "$source/tools/test-compiler-contract.sh" \
+              "$compiler_bin/clang"
+            chmod 700 "$compiler_bin/gcc" "$compiler_bin/clang"
+
+            export DB_TEST_REAL_GCC="$real_gcc"
+            export DB_TEST_REAL_CLANG="$real_clang"
+            export DB_TEST_ROOT="$source"
+            export DB_TEST_WRITE_CONTRACT="$source/tests/test_write_contract.h"
+            export CC=clang
+            export PATH="$compiler_bin:$PATH"
+
+            {
+              printf '%s\n' 'DBLYATEM_PR108_ARM64_FEATURE_MACRO_R8'
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf 'VIRTUALIZATION=%s\n' "$virtualization"
+              printf 'REAL_GCC=%s\n' "$real_gcc"
+              printf 'REAL_CLANG=%s\n' "$real_clang"
+              printf '%s\n' 'FORCED_INCLUDE_GNU_FEATURE_MACRO=YES'
+            } | tee "$output/host.txt"
+
+            set +e
+            (
+              cd "$source"
+              /bin/sh tools/verify-linux-arm64-wx-provider.sh
+            ) > "$log" 2>&1
+            status=$?
+            set -e
+
+            cat "$log"
+
+            {
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf 'STEP18_EXIT=%s\n' "$status"
+              printf 'STEP18_LOG=%s\n' \
+                '18_verify-linux-arm64-wx-provider.log'
+            } > "$output/summary.txt"
+
+            if [ "$status" -ne 0 ]; then
+              printf '\n%s\n' 'PR108 ARM64 FEATURE MACRO R8: FAIL'
+              printf 'STEP18_EXIT=%s\n' "$status"
+              exit "$status"
+            fi
+
+            count_exact()
+            {
+              marker=$1
+              expected_count=$2
+              actual_count=$(grep -Fxc "$marker" "$log" || true)
+              [ "$actual_count" -eq "$expected_count" ] || {
+                printf 'MARKER COUNT MISMATCH marker=[%s] expected=%s actual=%s\n' \
+                  "$marker" "$expected_count" "$actual_count"
+                exit 110
+              }
+            }
+
+            count_exact 'LINUX ARM64 W^X MOCK TEST: PASS' 3
+            count_exact 'LINUX W^X PERMISSION OBSERVATION: PASS' 2
+            count_exact 'ARM64 PUBLISHED BLOCK TEST: PASS' 3
+            count_exact 'ARM64 PUBLISHED BLOCK ENUM TEST: PASS' 3
+            count_exact 'NATIVE AARCH64 EXECUTION: PASS' 1
+            count_exact 'ANDROID ARM64 RUNTIME EVIDENCE: NOT CLAIMED' 1
+            count_exact 'ARM64 PUBLISHED BLOCK VERIFY: PASS' 1
+            count_exact 'ARM64 PUBLISHED BLOCK ENUM VERIFY: PASS' 1
+            count_exact 'ARM64 CODE CACHE METADATA BOUNDARY: PASS' 1
+            count_exact 'NO RWX TRANSITION VERIFY: PASS' 1
+            count_exact 'LINUX ANDROID ARM64 W^X PROVIDER VERIFY: PASS' 1
+
+            if grep -E \
+              'MAP_ANONYMOUS.*undeclared|unused-result|AddressSanitizer:|UndefinedBehaviorSanitizer:|runtime error:|TEST: FAIL|VERIFY: FAIL' \
+              "$log" >/dev/null
+            then
+              printf '%s\n' 'FORBIDDEN R8 FAILURE MARKER OBSERVED'
+              exit 111
+            fi
+
+            {
+              printf '%s\n' 'DBLYATEM_PR108_ARM64_FEATURE_MACRO_R8_ACCEPTED'
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf '%s\n' 'HOST_ARCH=AARCH64'
+              printf '%s\n' 'RUNTIME_PAGE_SIZE=4096'
+              printf '%s\n' 'FORCED_INCLUDE_GNU_FEATURE_MACRO=PASS'
+              printf '%s\n' 'MAP_ANONYMOUS_DECLARATION=PASS'
+              printf '%s\n' 'STEP18_REPLAY=PASS'
+              printf '%s\n' 'NATIVE_AARCH64_EXECUTION=PASS'
+            } > "$output/accepted.txt"
+
+            (
+              cd "$output"
+              sha256sum \
+                accepted.txt \
+                host.txt \
+                summary.txt \
+                18_verify-linux-arm64-wx-provider.log \
+                > SHA256SUMS
+              sha256sum -c SHA256SUMS
+            )
+
+            printf '\n%s\n' 'PR108 ARM64 FEATURE MACRO R8: PASS'
+            printf 'FEATURE_HEAD=%s\n' "$head"
+            printf '%s\n' 'FORCED_INCLUDE_GNU_FEATURE_MACRO=PASS'
+            printf '%s\n' 'MAP_ANONYMOUS_DECLARATION=PASS'
+            printf '%s\n' 'STEP18_REPLAY=PASS'
+            printf '%s\n' 'NATIVE_AARCH64_EXECUTION=PASS'
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr108-r8-output
+          destination: dblyatem-pr108-r8-output
+          when: always
+
+workflows:
+  pr108-arm64-feature-macro-r8:
+    when: << pipeline.parameters.run_pr108_arm64_feature_macro_r8 >>
+
+    jobs:
+      - pr108-arm64-feature-macro-r8:
+          filters:
+            branches:
+              only:
+                - deadbyte/pr108-arm64-feature-macro-r8
+            tags:
+              ignore: /.*/
