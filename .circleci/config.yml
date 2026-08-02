@@ -1,0 +1,388 @@
+version: 2.1
+
+parameters:
+  run_pr110_arm64_cache_r1:
+    type: boolean
+    default: false
+
+jobs:
+  pr110-arm64-cache-r1:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get update
+
+            sudo env \
+              DEBIAN_FRONTEND=noninteractive \
+              NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git \
+                gcc \
+                clang \
+                make \
+                file \
+                util-linux \
+                coreutils \
+                grep \
+                sed \
+                tar
+
+      - run:
+          name: Verify exact PR110 head on native ARM64
+          command: |
+            set -euo pipefail
+
+            expected='ecdcfc4c32bfebb381e99921805575be0fc2b401'
+            challenge='9ad20e55b370464f9191ce45bc688c88e4ce81c8da9524bfcd0dd4cb7b376fc4'
+            source='/tmp/dblyatem-pr110-r1-source'
+            evidence='/tmp/dblyatem-pr110-arm64-cache-r1'
+            artifacts='/tmp/dblyatem-pr110-r1-artifacts'
+            stdout_log="$evidence/verify-all.stdout.log"
+
+            rm -rf "$source" "$evidence" "$artifacts"
+            mkdir -p "$evidence" "$artifacts"
+
+            seal_artifacts()
+            {
+              (
+                cd "$evidence"
+                find . \
+                  -type f \
+                  ! -name SHA256SUMS \
+                  -print0 | \
+                  LC_ALL=C sort -z | \
+                  xargs -0 sha256sum \
+                  > SHA256SUMS
+                sha256sum -c SHA256SUMS
+              )
+
+              tar \
+                -C /tmp \
+                -czf "$artifacts/pr110-arm64-cache-r1.tar.gz" \
+                dblyatem-pr110-arm64-cache-r1
+
+              (
+                cd "$artifacts"
+                sha256sum pr110-arm64-cache-r1.tar.gz \
+                  > pr110-arm64-cache-r1.tar.gz.sha256
+                sha256sum -c pr110-arm64-cache-r1.tar.gz.sha256
+              )
+            }
+
+            git init --quiet "$source"
+            git -C "$source" remote add origin \
+              https://github.com/Deadbytes101/DBLYATEM.git
+            git -C "$source" fetch \
+              --quiet \
+              --depth=1 \
+              origin \
+              "$expected"
+            git -C "$source" checkout \
+              --quiet \
+              --detach \
+              FETCH_HEAD
+
+            head=$(git -C "$source" rev-parse HEAD)
+            tracked_dirty=$(git -C "$source" status \
+              --porcelain=v1 \
+              --untracked-files=no)
+            machine=$(uname -m)
+            page_size=$(getconf PAGESIZE)
+            shell_file=$(file -Lb "$(command -v sh)")
+            virtualization=$(systemd-detect-virt 2>/dev/null || printf '%s' none)
+            operating_system=$(uname -o 2>/dev/null || printf '%s' unknown)
+
+            [ "$head" = "$expected" ] || {
+              printf 'HEAD_MISMATCH expected=%s actual=%s\n' \
+                "$expected" "$head"
+              exit 90
+            }
+
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'TRACKED CHECKOUT DIRTY'
+              printf '%s\n' "$tracked_dirty"
+              exit 91
+            }
+
+            case "$machine" in
+              aarch64|arm64) ;;
+              *)
+                printf 'NOT NATIVE ARM64: %s\n' "$machine"
+                exit 92
+                ;;
+            esac
+
+            [ "$page_size" = 4096 ] || {
+              printf 'UNEXPECTED PAGE SIZE: %s\n' "$page_size"
+              exit 93
+            }
+
+            case "$shell_file" in
+              *AArch64*|*aarch64*) ;;
+              *)
+                printf 'USERSPACE IS NOT AARCH64: %s\n' "$shell_file"
+                exit 94
+                ;;
+            esac
+
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'SOFTWARE EMULATION REJECTED: %s\n' "$virtualization"
+                exit 95
+                ;;
+            esac
+
+            [ "$operating_system" != Android ] || {
+              printf '%s\n' 'ANDROID HOST REJECTED FOR LINUX R1'
+              exit 96
+            }
+
+            {
+              printf '%s\n' 'DBLYATEM_PR110_ARM64_CACHE_R1_HOST'
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'CONFIG_HEAD=%s\n' "${CIRCLE_SHA1:-unknown}"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf 'SHELL_FILE=%s\n' "$shell_file"
+              printf 'VIRTUALIZATION=%s\n' "$virtualization"
+              printf 'OPERATING_SYSTEM=%s\n' "$operating_system"
+              printf 'FRESH_CHECKOUT_DIRTY=NO\n'
+            } | tee "$evidence/host.txt"
+
+            header="$source/include/dblyat/arm64_block_cache.h"
+            implementation="$source/src/arm64_block_cache.c"
+            primary_test="$source/tests/arm64_block_cache_test.c"
+            lookup_test="$source/tests/arm64_block_cache_lookup_validation_test.c"
+            verifier="$source/tools/verify-arm64-block-cache.sh"
+            manifest_source="$source/tools/verify-manifest.txt"
+
+            for required in \
+              "$header" \
+              "$implementation" \
+              "$primary_test" \
+              "$lookup_test" \
+              "$verifier" \
+              "$manifest_source"
+            do
+              [ -f "$required" ] || {
+                printf 'SOURCE CONTRACT FILE MISSING: %s\n' "$required"
+                exit 100
+              }
+            done
+
+            [ -x "$verifier" ] || {
+              printf '%s\n' 'CACHE VERIFIER IS NOT EXECUTABLE'
+              exit 101
+            }
+
+            grep -Fx \
+              'STANDALONE=tools/verify-arm64-block-cache.sh' \
+              "$manifest_source" >/dev/null
+            grep -F \
+              'if (!cache_full_valid(cache, &slot_bytes)) {' \
+              "$implementation" >/dev/null
+            grep -F \
+              'DB_ARM64_BLOCK_CACHE_BAD_CACHE' \
+              "$lookup_test" >/dev/null
+
+            if grep -E \
+              '(^|[^[:alnum:]_])(malloc|calloc|realloc|free|mmap|munmap|mprotect|VirtualAlloc|VirtualProtect|pthread_|atomic_|__atomic|__sync|PROT_EXEC|MAP_JIT|clear_cache)([^[:alnum:]_]|$)' \
+              "$header" "$implementation" >/dev/null
+            then
+              printf '%s\n' 'FORBIDDEN CACHE OWNERSHIP OR EXECUTION API'
+              exit 102
+            fi
+
+            mkdir -p \
+              "$evidence/source/include/dblyat" \
+              "$evidence/source/src" \
+              "$evidence/source/tests" \
+              "$evidence/source/tools"
+            cp "$header" \
+              "$evidence/source/include/dblyat/arm64_block_cache.h"
+            cp "$implementation" \
+              "$evidence/source/src/arm64_block_cache.c"
+            cp "$primary_test" \
+              "$evidence/source/tests/arm64_block_cache_test.c"
+            cp "$lookup_test" \
+              "$evidence/source/tests/arm64_block_cache_lookup_validation_test.c"
+            cp "$verifier" \
+              "$evidence/source/tools/verify-arm64-block-cache.sh"
+            cp "$manifest_source" \
+              "$evidence/source/tools/verify-manifest.txt"
+
+            set +e
+            (
+              cd "$source"
+              /bin/sh tools/verify-all.sh
+            ) > "$stdout_log" 2>&1
+            verify_status=$?
+            set -e
+
+            cat "$stdout_log"
+
+            verify_root="$source/build/verify-all"
+            manifest="$verify_root/manifest.txt"
+
+            if [ -d "$verify_root" ]; then
+              cp -a "$verify_root" "$evidence/verify-all"
+            fi
+
+            if [ "$verify_status" -ne 0 ]; then
+              {
+                printf 'FEATURE_HEAD=%s\n' "$head"
+                printf 'VERIFY_ALL_EXIT=%s\n' "$verify_status"
+              } > "$evidence/failure.txt"
+
+              if [ -f "$manifest" ]; then
+                failed_step=$(sed -n \
+                  's/^FAILED_STEP=//p' "$manifest" | tail -n 1)
+                printf 'FAILED_STEP=%s\n' "${failed_step:-unknown}" \
+                  >> "$evidence/failure.txt"
+                printf '\n%s\n' 'VERIFY-ALL FAILURE MANIFEST'
+                cat "$manifest"
+
+                if [ -n "${failed_step:-}" ]; then
+                  failed_log=$(find "$verify_root/logs" \
+                    -maxdepth 1 \
+                    -type f \
+                    -name "*_${failed_step}.log" \
+                    -print | \
+                    LC_ALL=C sort | \
+                    sed -n '1p')
+
+                  if [ -n "${failed_log:-}" ]; then
+                    printf '\n%s\n' 'VERIFY-ALL FAILED INTERNAL LOG'
+                    cat "$failed_log"
+                  fi
+                fi
+              else
+                printf '%s\n' 'FAILED_STEP=manifest-missing' \
+                  >> "$evidence/failure.txt"
+              fi
+
+              seal_artifacts
+              exit "$verify_status"
+            fi
+
+            [ -f "$manifest" ] || {
+              printf '%s\n' 'FINAL MANIFEST MISSING'
+              exit 110
+            }
+
+            contract_log="$verify_root/logs/01_contract-test.log"
+            gcc_log="$verify_root/logs/03_gcc-full-tree.log"
+            clang_log="$verify_root/logs/05_clang-full-tree.log"
+            step18_log="$verify_root/logs/18_verify-linux-arm64-wx-provider.log"
+            step19_log="$verify_root/logs/19_verify-arm64-block-cache.log"
+
+            for required in \
+              "$contract_log" \
+              "$gcc_log" \
+              "$clang_log" \
+              "$step18_log" \
+              "$step19_log"
+            do
+              [ -f "$required" ] || {
+                printf 'FINAL REQUIRED LOG MISSING: %s\n' "$required"
+                exit 111
+              }
+            done
+
+            grep -Fx "COMMIT_SHA=$expected" "$manifest" >/dev/null
+            grep -Fx 'STEP_01_NAME=contract-test' "$manifest" >/dev/null
+            grep -Fx 'STEP_01_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'STEP_03_NAME=gcc-full-tree' "$manifest" >/dev/null
+            grep -Fx 'STEP_03_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'STEP_05_NAME=clang-full-tree' "$manifest" >/dev/null
+            grep -Fx 'STEP_05_EXIT=0' "$manifest" >/dev/null
+            grep -Fx \
+              'STEP_18_NAME=verify-linux-arm64-wx-provider' \
+              "$manifest" >/dev/null
+            grep -Fx 'STEP_18_EXIT=0' "$manifest" >/dev/null
+            grep -Fx \
+              'STEP_19_NAME=verify-arm64-block-cache' \
+              "$manifest" >/dev/null
+            grep -Fx 'STEP_19_EXIT=0' "$manifest" >/dev/null
+            grep -Fx 'FAILED_STEP=NONE' "$manifest" >/dev/null
+            grep -Fx 'OVERALL_STATUS=PASS' "$manifest" >/dev/null
+
+            grep -Fx 'VERIFY ALL CONTRACT TEST: PASS' \
+              "$contract_log" >/dev/null
+            grep -Fx 'NATIVE AARCH64 EXECUTION: PASS' \
+              "$step18_log" >/dev/null
+
+            count_exact()
+            {
+              marker=$1
+              expected_count=$2
+              actual_count=$(grep -Fxc "$marker" "$step19_log" || true)
+              [ "$actual_count" -eq "$expected_count" ] || {
+                printf 'STEP19 MARKER COUNT MISMATCH marker=[%s] expected=%s actual=%s\n' \
+                  "$marker" "$expected_count" "$actual_count"
+                exit 112
+              }
+            }
+
+            count_exact 'ARM64 BLOCK CACHE TEST: PASS' 3
+            count_exact 'ARM64 BLOCK CACHE LOOKUP VALIDATION TEST: PASS' 3
+            count_exact 'ARM64 BLOCK CACHE VERIFY: PASS' 1
+            count_exact 'DETERMINISTIC BLOCK CACHE PROBE VERIFY: PASS' 1
+            count_exact 'ARM64 BLOCK CACHE FULL-TABLE LOOKUP VALIDATION: PASS' 1
+            count_exact 'ARM64 BLOCK CACHE NONEXECUTING BOUNDARY: PASS' 1
+
+            if grep -R -E \
+              'unused-result|undeclared identifier|AddressSanitizer:|UndefinedBehaviorSanitizer:|runtime error:|TEST: FAIL|VERIFY: FAIL' \
+              "$verify_root/logs" >/dev/null
+            then
+              printf '%s\n' 'FORBIDDEN R1 LOG MARKER OBSERVED'
+              exit 113
+            fi
+
+            grep -Fx 'VERIFY ALL: PASS' "$stdout_log" >/dev/null
+
+            {
+              printf '%s\n' 'DBLYATEM_PR110_ARM64_CACHE_R1_ACCEPTED'
+              printf 'FEATURE_HEAD=%s\n' "$head"
+              printf 'CONFIG_HEAD=%s\n' "${CIRCLE_SHA1:-unknown}"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$challenge"
+              printf '%s\n' 'EXECUTION_PROVIDER=CIRCLECI'
+              printf '%s\n' 'HOST_ARCH=AARCH64'
+              printf '%s\n' 'RUNTIME_PAGE_SIZE=4096'
+              printf '%s\n' 'CANONICAL_VERIFY_ALL=PASS'
+              printf '%s\n' 'VERIFY_STEP_19=PASS'
+              printf '%s\n' 'STRICT_GCC=PASS'
+              printf '%s\n' 'STRICT_CLANG=PASS'
+              printf '%s\n' 'ASAN_UBSAN=PASS'
+              printf '%s\n' 'CLANG_ANALYZER=PASS'
+              printf '%s\n' 'DETERMINISTIC_SECOND_PROBE=PASS'
+              printf '%s\n' 'FULL_TABLE_LOOKUP_VALIDATION=PASS'
+              printf '%s\n' 'NONEXECUTING_CACHE_BOUNDARY=PASS'
+              printf '%s\n' 'NATIVE_AARCH64_EXECUTION=PASS'
+              printf '%s\n' 'PR110_ARM64_CACHE_R1=PASS'
+            } | tee "$evidence/accepted.txt"
+
+            seal_artifacts
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr110-r1-artifacts
+          destination: pr110-arm64-cache-r1
+          when: always
+
+workflows:
+  pr110-arm64-cache-r1:
+    when: << pipeline.parameters.run_pr110_arm64_cache_r1 >>
+    jobs:
+      - pr110-arm64-cache-r1
