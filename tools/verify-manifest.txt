@@ -19,3 +19,4 @@ STANDALONE=tools/verify-linux-arm64-wx-provider.sh
 STANDALONE=tools/verify-arm64-block-cache.sh
 STANDALONE=tools/verify-arm64-translation-reuse.sh
 STANDALONE=tools/verify-arm64-translation-benchmark.sh
+STANDALONE=tools/verify-arm64-translation-benchmark-flags.sh
