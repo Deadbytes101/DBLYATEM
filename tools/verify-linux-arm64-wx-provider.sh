@@ -6,6 +6,7 @@ build="$root/build/linux-arm64-wx-provider-verify"
 common='-Iinclude -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wshadow -Wstrict-prototypes -Wmissing-prototypes'
 sources='src/linux_arm64_wx_provider.c'
 posix_sources='src/linux_arm64_wx_provider.c src/linux_arm64_wx_posix.c'
+published_sources='src/arm64_published_block.c'
 
 rm -rf "$build"
 mkdir -p "$build"
@@ -28,6 +29,15 @@ if grep -E 'PROT_WRITE[^\n]*PROT_EXEC|PROT_EXEC[^\n]*PROT_WRITE|MAP_JIT' \
     src/linux_arm64_wx_posix.c >/dev/null
 then
     printf '%s\n' 'LINUX ARM64 W^X PROVIDER ALLOWS RWX OR MAP_JIT' >&2
+    exit 1
+fi
+
+if grep -E '#include[[:space:]]+<(sys/mman.h|windows.h)>|malloc[[:space:]]*\(|calloc[[:space:]]*\(|realloc[[:space:]]*\(|free[[:space:]]*\(|mmap[[:space:]]*\(|mprotect[[:space:]]*\(|VirtualAlloc[[:space:]]*\(|VirtualProtect[[:space:]]*\(|PROT_EXEC|MAP_JIT' \
+    include/dblyat/arm64_published_block.h \
+    src/arm64_published_block.c >/dev/null
+then
+    printf '%s\n' \
+        'ARM64 PUBLISHED BLOCK CROSSED METADATA-ONLY BOUNDARY' >&2
     exit 1
 fi
 
@@ -69,6 +79,16 @@ if [ "$is_android" -eq 1 ]; then
         -o "$build/android-linux-arm64-wx-execute-test"
     "$build/android-linux-arm64-wx-execute-test"
 
+    "$compiler" $common tests/arm64_published_block_test.c \
+        $published_sources \
+        -o "$build/android-arm64-published-block-test"
+    "$build/android-arm64-published-block-test"
+
+    "$compiler" $common tests/arm64_published_block_enum_test.c \
+        $published_sources \
+        -o "$build/android-arm64-published-block-enum-test"
+    "$build/android-arm64-published-block-enum-test"
+
     printf '%s\n' 'ANDROID ARM64 RUNTIME EVIDENCE: PASS'
 else
     for command_name in gcc clang; do
@@ -108,6 +128,44 @@ else
         -o "$build/clang-linux-arm64-wx-posix-test"
     "$build/clang-linux-arm64-wx-posix-test"
 
+    gcc $common tests/arm64_published_block_test.c $published_sources \
+        -o "$build/gcc-arm64-published-block-test"
+    "$build/gcc-arm64-published-block-test"
+
+    clang $common tests/arm64_published_block_test.c $published_sources \
+        -o "$build/clang-arm64-published-block-test"
+    "$build/clang-arm64-published-block-test"
+
+    gcc -Iinclude -std=c11 -O1 -g \
+        -Wall -Wextra -Wpedantic -Werror \
+        -fsanitize=address,undefined -fno-omit-frame-pointer \
+        tests/arm64_published_block_test.c $published_sources \
+        -o "$build/arm64-published-block-sanitizer-test"
+    "$build/arm64-published-block-sanitizer-test"
+
+    clang --analyze -Iinclude -std=c11 \
+        -Wall -Wextra -Wpedantic -Werror \
+        $published_sources tests/arm64_published_block_test.c
+
+    gcc $common tests/arm64_published_block_enum_test.c $published_sources \
+        -o "$build/gcc-arm64-published-block-enum-test"
+    "$build/gcc-arm64-published-block-enum-test"
+
+    clang $common tests/arm64_published_block_enum_test.c $published_sources \
+        -o "$build/clang-arm64-published-block-enum-test"
+    "$build/clang-arm64-published-block-enum-test"
+
+    gcc -Iinclude -std=c11 -O1 -g \
+        -Wall -Wextra -Wpedantic -Werror \
+        -fsanitize=address,undefined -fno-omit-frame-pointer \
+        tests/arm64_published_block_enum_test.c $published_sources \
+        -o "$build/arm64-published-block-enum-sanitizer-test"
+    "$build/arm64-published-block-enum-sanitizer-test"
+
+    clang --analyze -Iinclude -std=c11 \
+        -Wall -Wextra -Wpedantic -Werror \
+        $published_sources tests/arm64_published_block_enum_test.c
+
     case "$machine" in
         aarch64|arm64)
             gcc $common tests/linux_arm64_wx_execute_test.c $posix_sources \
@@ -122,5 +180,8 @@ else
     printf '%s\n' 'ANDROID ARM64 RUNTIME EVIDENCE: NOT CLAIMED'
 fi
 
+printf '%s\n' 'ARM64 PUBLISHED BLOCK VERIFY: PASS'
+printf '%s\n' 'ARM64 PUBLISHED BLOCK ENUM VERIFY: PASS'
+printf '%s\n' 'ARM64 CODE CACHE METADATA BOUNDARY: PASS'
 printf '%s\n' 'NO RWX TRANSITION VERIFY: PASS'
 printf '%s\n' 'LINUX ANDROID ARM64 W^X PROVIDER VERIFY: PASS'
