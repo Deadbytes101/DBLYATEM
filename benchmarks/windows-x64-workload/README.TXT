@@ -56,7 +56,7 @@ Its canonical repository representation is:
 
 The executable generator is:
 
-    generate-probe.c
+    generate-probe-v1.c
 
 The generator writes every byte explicitly. It does not invoke a Windows
 cross-linker and does not inherit timestamps, debug paths, build IDs or host
@@ -88,7 +88,7 @@ VERIFY
 
 Portable structural and rebuild verification:
 
-    sh tools/verify-identical-x64-workload.sh
+    sh tools/verify-windows-x64-workload.sh
 
 Observed native Windows verification is performed by a separately hashed owner
 harness published on Issue #120 after the exact feature head exists.

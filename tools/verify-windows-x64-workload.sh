@@ -23,7 +23,7 @@ expected_hex_sha256='12d42d73b87294fd3e4dc635d7f9c5404cb39f18bf07df4320028b65bdf
 expected_hex_bytes='3073'
 expected_generator_sha256='29b458b0af3b7cfa3081f60f9b23d56f3fc8d0e20e0264c5e19caecb7a6aa3ea'
 expected_structure_sha256='3361fe60249cc8db1ee2178bcc126257f9cc0ee9ff576fe7eda0d946a0ad9949'
-expected_readme_sha256='a6e2da8f22d1d2908e6f044397e87ec1d1a8e1eeb3629301a82de9827076b9b0'
+expected_readme_sha256='81231885e9bdbbb13ac5ffa1615a553a8dab5e9963d6964b689544130700a05d'
 expected_import_sha256='11257ccbd66a05eb70386075b99d692806ec448f86269e5b0158bd2b962e58c8'
 expected_section_sha256='c8adedc908ea9411e47c3a199216bf56ba9322731f324feecabaef408bf96029'
 expected_device_manifest_sha256='61921ce6b302c007d509e7b5a28982e2c9434706df2714a306cd228495573f01'
@@ -82,7 +82,7 @@ expect_failure()
 }
 
 for command_name in \
-    gcc clang sha256sum awk grep sed sort cmp wc tr cp dd printf mktemp rm mkdir basename
+    gcc clang sha256sum awk grep sed sort cmp wc tr cp dd od printf mktemp rm mkdir basename
 do
     command -v "$command_name" >/dev/null 2>&1 ||
         fail "required command not found: $command_name"
@@ -177,6 +177,12 @@ clang $common_flags "$generator_source" -o "$scratch/build-b/generator"
 cmp -s "$scratch/build-a/probe.exe" "$scratch/build-b/probe.exe" ||
     fail 'GCC and Clang generator outputs differ'
 
+od -An -v -tx1 "$scratch/build-a/probe.exe" |
+    tr -d '[:space:]' > "$scratch/generated.hex"
+printf '\n' >> "$scratch/generated.hex"
+cmp -s "$scratch/generated.hex" "$canonical_hex" ||
+    fail 'canonical hex does not match generated executable bytes'
+
 for probe in "$scratch/build-a/probe.exe" "$scratch/build-b/probe.exe"
 do
     [ "$(byte_count "$probe")" = "$expected_executable_bytes" ] ||
@@ -225,6 +231,7 @@ printf '%s\n' 'ENTRY_POINT_RVA=00001000'
 printf '%s\n' 'IMPORT_DLL_COUNT=1'
 printf '%s\n' 'IMPORT_SYMBOL_COUNT=3'
 printf '%s\n' 'BUILD_REPRODUCIBLE=YES'
+printf '%s\n' 'CANONICAL_HEX_MATCH=PASS'
 printf '%s\n' 'NEGATIVE_FIXTURES=PASS'
 printf '%s\n' 'NATIVE_WINDOWS_EXECUTION=NOT_RUN'
 printf '%s\n' 'DBLYATEM_EXECUTION=NOT_RUN'
