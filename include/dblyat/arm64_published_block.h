@@ -9,7 +9,7 @@
 
 #include <stdint.h>
 
-#define DB_ARM64_PUBLISHED_BLOCK_FORMAT_VERSION UINT32_C(1)
+#define DB_ARM64_PUBLISHED_BLOCK_FORMAT_VERSION UINT32_C(2)
 
 typedef enum db_arm64_published_block_status {
     DB_ARM64_PUBLISHED_BLOCK_OK = 0,
