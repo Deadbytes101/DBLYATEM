@@ -15,9 +15,9 @@ $ErrorActionPreference = 'Stop'
 
 $ExpectedHarnessV3BlobSha1 = '92a885c9a3a2bb00893c65dc1e579badbe38ff7d'
 $OldWorkloadCommit = 'c57130981bca654f33d6a832aecd0d8348b6c02d'
-$NewWorkloadCommit = 'd7adf9bd65aa3c28732c482ee505510a86109e6c'
+$NewWorkloadCommit = '6da963345f55daf7c384568644cacd7ce5be6371'
 $OldSourceBlobSha1 = '87155048d6ef4d56cb9323ef20fc6b8b1850af0e'
-$NewSourceBlobSha1 = '6c9c0f270b7de8569cacd253d3a8f4b601c5fdc4'
+$NewSourceBlobSha1 = 'd5f7d3e6fca91683d8f7d783647fabe3a693f293'
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $HarnessV3 = Join-Path $ScriptRoot 'CAPTURE-NATIVE-WINDOWS-V3.ps1'
