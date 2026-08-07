@@ -177,15 +177,23 @@ int main(void)
 PROBE_SOURCE
 
 cat > "$probe_root/tests/feature_macro_probe_test.c" <<'FEATURE_PROBE_SOURCE'
+#ifndef _GNU_SOURCE
+#error _GNU_SOURCE must be defined by the forced test header
+#endif
+
+#ifndef _WIN32
 #include <sys/mman.h>
 
 #ifndef MAP_ANONYMOUS
 #error MAP_ANONYMOUS must remain visible after the forced test header
 #endif
+#endif
 
 int main(void)
 {
+#ifndef _WIN32
     (void)MAP_ANONYMOUS;
+#endif
     return 0;
 }
 FEATURE_PROBE_SOURCE
