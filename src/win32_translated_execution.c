@@ -72,12 +72,19 @@ static bool db_execution_canonical(uint64_t address)
            (sign == 0u ? upper == 0u : upper == UINT64_C(0xffff));
 }
 
-static bool db_execution_scalar_valid(const db_x64_scalar_state *state,
-                                      uint64_t expected_rip)
+static bool db_execution_scalar_base_valid(
+    const db_x64_scalar_state *state)
 {
     return db_execution_canonical(state->rip) &&
-           state->rip == expected_rip &&
            (state->rflags & DB_X64_RFLAGS_FIXED_ONE) != 0u;
+}
+
+static bool db_execution_scalar_at_rip_valid(
+    const db_x64_scalar_state *state,
+    uint64_t expected_rip)
+{
+    return db_execution_scalar_base_valid(state) &&
+           state->rip == expected_rip;
 }
 
 static bool db_execution_published_valid(
@@ -111,8 +118,7 @@ static bool db_execution_published_valid(
         expected_guest_end != published->guest_end_rip ||
         !db_execution_canonical(published->guest_end_rip) ||
         (published->guest_fallthrough_rip != 0u &&
-         !db_execution_canonical(published->guest_fallthrough_rip)) ||
-        published->arm64_word_count > UINT64_MAX / UINT64_C(4)) {
+         !db_execution_canonical(published->guest_fallthrough_rip))) {
         return false;
     }
 
@@ -283,13 +289,13 @@ db_win32_translated_execution_status
         return DB_WIN32_TRANSLATED_EXECUTION_BAD_TERMINAL_EXIT;
     }
 
-    if (!db_execution_scalar_valid(scalar_state,
-                                   observed_exit->source_rip)) {
+    if (!db_execution_scalar_base_valid(scalar_state)) {
         return DB_WIN32_TRANSLATED_EXECUTION_BAD_SCALAR_STATE;
     }
 
     planned_kernel32 = *kernel32_state;
     planned_scalar = *scalar_state;
+    planned_scalar.rip = observed_exit->source_rip;
     db_execution_finish_common(observed_exit, &completed);
 
     switch ((db_translated_terminal_exit_kind)observed_exit->kind) {
@@ -414,7 +420,12 @@ db_win32_translated_execution_status
     db_win32_translated_execution_status status;
 
     if (published == NULL || kernel32_state == NULL ||
-        scalar_state == NULL || summary == NULL) {
+        scalar_state == NULL || summary == NULL ||
+        (gateway_buffer_size != 0u && gateway_buffer == NULL) ||
+        (target_count != 0u && targets == NULL) ||
+        (handler_count != 0u && handlers == NULL) ||
+        (signature_count != 0u && signatures == NULL) ||
+        (guest_stack_size != 0u && guest_stack == NULL)) {
         return DB_WIN32_TRANSLATED_EXECUTION_NULL_ARGUMENT;
     }
 
@@ -442,8 +453,8 @@ db_win32_translated_execution_status
         return DB_WIN32_TRANSLATED_EXECUTION_BAD_PUBLISHED_BLOCK;
     }
 
-    if (!db_execution_scalar_valid(scalar_state,
-                                   published->guest_source_rip)) {
+    if (!db_execution_scalar_at_rip_valid(
+            scalar_state, published->guest_source_rip)) {
         return DB_WIN32_TRANSLATED_EXECUTION_BAD_SCALAR_STATE;
     }
 
