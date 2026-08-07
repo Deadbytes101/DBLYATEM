@@ -62,7 +62,7 @@ static int test_builtin_catalog(void)
 
     catalog = db_win32_kernel32_catalog(&count);
     CHECK(catalog != NULL);
-    CHECK(count == 4u);
+    CHECK(count == 5u);
 
     CHECK(db_win32_provider_lookup(catalog,
                                    count,
@@ -94,6 +94,20 @@ static int test_builtin_catalog(void)
     CHECK(match.argument_count == 1u);
     CHECK(match.flags == DB_WIN32_PROVIDER_FLAG_THREAD_STATE);
 
+    CHECK(db_win32_provider_lookup(catalog,
+                                   count,
+                                   "kernel32.dll",
+                                   12u,
+                                   "ExitProcess",
+                                   11u,
+                                   &match) == DB_WIN32_PROVIDER_OK);
+    CHECK(match.catalog_index == 4u);
+    CHECK(match.symbol_id == DB_WIN32_SYMBOL_KERNEL32_EXIT_PROCESS);
+    CHECK(match.handler_id == DB_WIN32_HANDLER_KERNEL32_EXIT_PROCESS);
+    CHECK(match.argument_count == 1u);
+    CHECK(match.flags == DB_WIN32_PROVIDER_FLAG_PROCESS_STATE);
+    CHECK(match.reserved == 0u);
+
     CHECK(preserved(catalog,
                     count,
                     "kernel32.dll",
@@ -117,7 +131,7 @@ static int test_catalog_failures(void)
     size_t count;
 
     builtin = db_win32_kernel32_catalog(&count);
-    CHECK(count == 4u);
+    CHECK(count == 5u);
     copy_record(&catalog[0], &builtin[0]);
     copy_record(&catalog[1], &builtin[1]);
     copy_record(&catalog[2], &builtin[2]);
