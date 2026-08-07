@@ -226,3 +226,25 @@ gateway_registry_verify: $(BUILD)/gateway_registry_test
 	./$(BUILD)/gateway_registry_test
 
 test: gateway_registry_verify
+
+CORE += src/win32_provider.c \
+        src/win32_kernel32.c \
+        src/win32_kernel32_invoke.c \
+        src/win32_kernel32_gateway.c \
+        src/win32_runtime_dispatch.c
+HEADERS += include/dblyat/win32_provider.h \
+           include/dblyat/win32_kernel32.h \
+           include/dblyat/win32_kernel32_invoke.h \
+           include/dblyat/win32_kernel32_gateway.h \
+           include/dblyat/win32_runtime_dispatch.h
+
+$(BUILD)/dblyatem: src/win32_provider.c \
+                   src/win32_kernel32.c \
+                   src/win32_kernel32_invoke.c \
+                   src/win32_kernel32_gateway.c \
+                   src/win32_runtime_dispatch.c \
+                   include/dblyat/win32_provider.h \
+                   include/dblyat/win32_kernel32.h \
+                   include/dblyat/win32_kernel32_invoke.h \
+                   include/dblyat/win32_kernel32_gateway.h \
+                   include/dblyat/win32_runtime_dispatch.h
