@@ -28,7 +28,7 @@ db_win32_kernel32_gateway_status db_win32_kernel32_gateway_run(
     db_gateway_x64_guest_state *guest_state,
     db_win32_kernel32_gateway_summary *summary)
 {
-    db_win32_kernel32_gateway_summary completed;
+    db_win32_kernel32_gateway_summary completed = {0};
     db_win32_kernel32_state planned_provider;
     db_gateway_x64_guest_state planned_guest;
     db_win32_kernel32_invoke_status invoke_status;
@@ -68,6 +68,13 @@ db_win32_kernel32_gateway_status db_win32_kernel32_gateway_run(
         return DB_WIN32_KERNEL32_GATEWAY_INVOCATION_FAILED;
     }
 
+    if (request->handler_id == DB_WIN32_HANDLER_KERNEL32_EXIT_PROCESS) {
+        completed.reserved = 0u;
+        *provider_state = planned_provider;
+        *summary = completed;
+        return DB_WIN32_KERNEL32_GATEWAY_GUEST_TERMINATED;
+    }
+
     planned_guest = *guest_state;
     completion_status = db_gateway_auth_complete(request,
                                                  &completed.result,
@@ -92,7 +99,8 @@ const char *db_win32_kernel32_gateway_status_name(
         "null argument",
         "buffer overlap",
         "KERNEL32 invocation planning failed",
-        "authenticated gateway completion failed"
+        "authenticated gateway completion failed",
+        "guest process terminated"
     };
 
     if ((size_t)status >= sizeof(names) / sizeof(names[0])) {

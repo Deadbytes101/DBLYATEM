@@ -48,6 +48,16 @@ static const db_win32_provider_record db_win32_kernel32_records[] = {
         1u,
         DB_WIN32_PROVIDER_FLAG_THREAD_STATE,
         0u
+    },
+    {
+        "KERNEL32.DLL",
+        "ExitProcess",
+        DB_WIN32_PROVIDER_KERNEL32,
+        DB_WIN32_SYMBOL_KERNEL32_EXIT_PROCESS,
+        DB_WIN32_HANDLER_KERNEL32_EXIT_PROCESS,
+        1u,
+        DB_WIN32_PROVIDER_FLAG_PROCESS_STATE,
+        0u
     }
 };
 
