@@ -13,7 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$ExpectedHarnessV3Sha256 = 'a5e9ca45525bafdd25b250275b974f27c98a4cd997485876c568ecbf077e11b7'
+$ExpectedHarnessV3BlobSha1 = '92a885c9a3a2bb00893c65dc1e579badbe38ff7d'
 $OldWorkloadCommit = 'c57130981bca654f33d6a832aecd0d8348b6c02d'
 $NewWorkloadCommit = 'd7adf9bd65aa3c28732c482ee505510a86109e6c'
 $OldSourceBlobSha1 = '87155048d6ef4d56cb9323ef20fc6b8b1850af0e'
@@ -26,15 +26,19 @@ if (-not (Test-Path -LiteralPath $HarnessV3 -PathType Leaf)) {
     throw "V3 HARNESS MISSING: $HarnessV3"
 }
 
-$ObservedHarnessV3Sha256 = (
-    Get-FileHash -LiteralPath $HarnessV3 -Algorithm SHA256
-).Hash.ToLowerInvariant()
+$ObservedHarnessV3BlobSha1 = (
+    git -C $ScriptRoot hash-object -- $HarnessV3
+).Trim().ToLowerInvariant()
 
-if ($ObservedHarnessV3Sha256 -cne $ExpectedHarnessV3Sha256) {
+if ($LASTEXITCODE -ne 0) {
+    throw 'V3 HARNESS GIT HASH-OBJECT FAILED'
+}
+
+if ($ObservedHarnessV3BlobSha1 -cne $ExpectedHarnessV3BlobSha1) {
     throw (
-        'V3 HARNESS SHA256 MISMATCH ' +
-        "expected=$ExpectedHarnessV3Sha256 " +
-        "actual=$ObservedHarnessV3Sha256"
+        'V3 HARNESS BLOB SHA1 MISMATCH ' +
+        "expected=$ExpectedHarnessV3BlobSha1 " +
+        "actual=$ObservedHarnessV3BlobSha1"
     )
 }
 
@@ -83,27 +87,26 @@ try {
     )
 
     Write-Host 'DBLYATEM NATIVE WINDOWS V4 BINDING: PASS'
-    Write-Host ('V3_HARNESS_SHA256=' + $ObservedHarnessV3Sha256)
+    Write-Host ('V3_HARNESS_BLOB_SHA1=' + $ObservedHarnessV3BlobSha1)
     Write-Host ('WORKLOAD_COMMIT=' + $NewWorkloadCommit)
     Write-Host ('SOURCE_BLOB_SHA1=' + $NewSourceBlobSha1)
 
-    $Arguments = @(
-        '-NoLogo',
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        ('"' + $TemporaryHarness + '"')
-    )
-
-    if (-not [string]::IsNullOrWhiteSpace($OutputRoot)) {
-        $Arguments += @(
-            '-OutputRoot',
-            ('"' + $OutputRoot + '"')
-        )
+    if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
+        & powershell.exe `
+            -NoLogo `
+            -NoProfile `
+            -ExecutionPolicy Bypass `
+            -File $TemporaryHarness
+    }
+    else {
+        & powershell.exe `
+            -NoLogo `
+            -NoProfile `
+            -ExecutionPolicy Bypass `
+            -File $TemporaryHarness `
+            -OutputRoot $OutputRoot
     }
 
-    & powershell.exe $Arguments
     $InnerExitCode = $LASTEXITCODE
 
     if ($InnerExitCode -ne 0) {
