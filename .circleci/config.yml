@@ -1,0 +1,256 @@
+version: 2.1
+
+parameters:
+  run_pr127_native_aarch64_r1:
+    type: boolean
+    default: false
+
+jobs:
+  pr127-native-aarch64-r1:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: arm.medium
+    shell: /bin/bash -eo pipefail
+
+    steps:
+      - run:
+          name: Install strict native toolchain
+          command: |
+            set -euo pipefail
+            sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+              apt-get update
+            sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+              apt-get install -y --no-install-recommends \
+                git gcc clang make file binutils util-linux coreutils \
+                grep sed findutils gawk tar
+
+      - run:
+          name: Verify exact PR127 native terminal identity
+          command: |
+            set -euo pipefail
+
+            repository='https://github.com/Deadbytes101/DBLYATEM.git'
+            expected_branch='deadbyte/pr127-native-aarch64-circleci-r1'
+            expected_feature='67fa06ddb80dafe80d8761e34b5c5474fc106c6f'
+            expected_config="${CIRCLE_SHA1}"
+            expected_challenge='a0054dc424a3617b5ab5f440b6397b3c75ff5d9ff311c420559bf71b48c03237'
+
+            checkout='/tmp/dblyatem-pr127-native-checkout'
+            output='/tmp/dblyatem-pr127-native-aarch64-r1-output'
+            artifacts='/tmp/dblyatem-pr127-native-aarch64-r1-artifacts'
+            archive="$artifacts/pr127-native-aarch64-r1.tar.gz"
+
+            rm -rf "$checkout" "$output" "$artifacts"
+            mkdir -p "$checkout" "$output" "$artifacts"
+
+            [ "${CIRCLE_BRANCH:-}" = "$expected_branch" ] || {
+              printf 'BRANCH MISMATCH expected=%s actual=%s\n' \
+                "$expected_branch" "${CIRCLE_BRANCH:-missing}" >&2
+              exit 1
+            }
+
+            machine=$(uname -m)
+            case "$machine" in
+              aarch64|arm64) ;;
+              *) printf 'HOST ARCH REJECTED: %s\n' "$machine" >&2; exit 1 ;;
+            esac
+
+            page_size=$(getconf PAGESIZE)
+            [ "$page_size" = '4096' ] || {
+              printf 'PAGE SIZE REJECTED: %s\n' "$page_size" >&2
+              exit 1
+            }
+
+            shell_identity=$(file -L /bin/sh)
+            printf '%s\n' "$shell_identity" |
+              grep -Eiq 'aarch64|ARM aarch64' || {
+                printf 'NON-AARCH64 USERSPACE REJECTED: %s\n' \
+                  "$shell_identity" >&2
+                exit 1
+              }
+
+            virtualization=$(systemd-detect-virt 2>/dev/null || true)
+            case "$virtualization" in
+              qemu|bochs|uml)
+                printf 'EMULATED HOST REJECTED: %s\n' "$virtualization" >&2
+                exit 1
+                ;;
+            esac
+
+            git init "$checkout"
+            git -C "$checkout" remote add origin "$repository"
+            git -C "$checkout" fetch --depth=1 origin "$expected_feature"
+            git -C "$checkout" checkout --detach FETCH_HEAD
+
+            observed_feature=$(git -C "$checkout" rev-parse HEAD)
+            [ "$observed_feature" = "$expected_feature" ] || {
+              printf 'FEATURE HEAD MISMATCH expected=%s actual=%s\n' \
+                "$expected_feature" "$observed_feature" >&2
+              exit 1
+            }
+
+            tracked_dirty=$(git -C "$checkout" status --porcelain --untracked-files=no)
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'FRESH CHECKOUT TRACKED DIRTY' >&2
+              exit 1
+            }
+
+            verifier='tools/verify-linux-arm64-translation-entry.sh'
+            mode_line=$(git -C "$checkout" ls-files -s "$verifier")
+            printf '%s\n' "$mode_line" | grep -Eq '^100755 ' || {
+              printf 'VERIFIER MODE REJECTED file=%s mode=%s\n' \
+                "$verifier" "$mode_line" >&2
+              exit 1
+            }
+
+            {
+              printf '%s\n' 'DBLYATEM_PR127_NATIVE_AARCH64_HOST_V1'
+              printf 'FEATURE_HEAD=%s\n' "$observed_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf 'MACHINE=%s\n' "$machine"
+              printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
+              printf 'VIRTUALIZATION=%s\n' "${virtualization:-none}"
+              printf '%s\n' 'FRESH_CHECKOUT_DIRTY=NO'
+              printf '%s\n' 'DBLYATEM_IDENTICAL_PE_EXECUTION=NOT_RUN'
+              printf '%s\n' 'WINLATOR_EXECUTION=NOT_RUN'
+              printf '%s\n' 'WINLATOR_COMPARISON=NOT_RUN'
+            } > "$output/host.txt"
+
+            set +e
+            (
+              cd "$checkout"
+              /bin/sh tools/verify-linux-arm64-translation-entry.sh
+            ) > "$output/translation-entry.log" 2>&1
+            verify_status=$?
+            set -e
+
+            printf 'VERIFY_EXIT=%s\n' "$verify_status" > "$output/verify-exit.txt"
+
+            if [ "$verify_status" -ne 0 ]; then
+              cp "$output/translation-entry.log" \
+                "$artifacts/translation-entry.failed.log"
+              printf 'VERIFY_EXIT=%s\n' "$verify_status" >&2
+              exit "$verify_status"
+            fi
+
+            log="$output/translation-entry.log"
+
+            exact_line()
+            {
+              file_path=$1
+              expected=$2
+              actual=$(grep -Fxc "$expected" "$file_path" || true)
+              [ "$actual" -eq 1 ] || {
+                printf 'EXACT LINE MISMATCH file=%s line=[%s] expected=1 actual=%s\n' \
+                  "$file_path" "$expected" "$actual" >&2
+                exit 1
+              }
+            }
+
+            exact_count()
+            {
+              file_path=$1
+              expected=$2
+              count=$3
+              actual=$(grep -Fxc "$expected" "$file_path" || true)
+              [ "$actual" -eq "$count" ] || {
+                printf 'EXACT COUNT MISMATCH file=%s line=[%s] expected=%s actual=%s\n' \
+                  "$file_path" "$expected" "$count" "$actual" >&2
+                exit 1
+              }
+            }
+
+            exact_count "$log" 'LINUX ARM64 TRANSLATED ENTRY TEST: PASS' 3
+            exact_count "$log" 'X64 BYTES TO NATIVE ARM64 EXECUTION: PASS' 3
+            exact_count "$log" 'TRANSLATED DIRECT EXIT IDENTITY: PASS' 3
+            exact_count "$log" 'TRANSLATED INVALID OPCODE TRAP IDENTITY: PASS' 3
+            exact_count "$log" 'TRANSLATED BLOCK CACHE EXIT PERSISTENCE: PASS' 3
+            exact_count "$log" 'TRANSLATED EXIT MISMATCH TRANSACTIONALITY: PASS' 3
+            exact_count "$log" 'TRANSLATED W^X RELEASE CYCLES: PASS' 3
+            exact_line "$log" 'X64 TO ARM64 TRANSLATED EXECUTION: PASS'
+            exact_line "$log" 'TRANSLATED TERMINAL EXIT NATIVE IDENTITY: PASS'
+            exact_line "$log" 'TRANSLATED ENTRY ASSEMBLY ABI: PASS'
+            exact_line "$log" 'TRANSLATED TERMINAL EXIT RECORD VALIDATION: PASS'
+            exact_line "$log" 'TRANSLATED TERMINAL EXIT CACHE BINDING: PASS'
+            exact_line "$log" 'TRANSLATED ENTRY VALIDATION: PASS'
+            exact_line "$log" 'TRANSLATED ENTRY TRANSACTIONAL AUDIT: PASS'
+            exact_line "$log" 'TRANSLATED W^X PUBLISH ENTER RELEASE: PASS'
+            exact_line "$log" 'LINUX ARM64 TRANSLATED ENTRY VERIFY: PASS'
+            exact_line "$log" 'WINLATOR COMPARISON: NOT RUN'
+
+            if grep -F 'NOT CLAIMED' "$log" >/dev/null; then
+              printf '%s\n' 'NATIVE VERIFIER EMITTED NOT CLAIMED' >&2
+              grep -F 'NOT CLAIMED' "$log" >&2
+              exit 1
+            fi
+
+            tracked_dirty_after=$(git -C "$checkout" status --porcelain --untracked-files=no)
+            [ -z "$tracked_dirty_after" ] || {
+              printf '%s\n' 'POST-VERIFY TRACKED DIRTY' >&2
+              printf '%s\n' "$tracked_dirty_after" >&2
+              exit 1
+            }
+
+            {
+              printf '%s\n' 'DBLYATEM_PR127_NATIVE_AARCH64_ACCEPTED_V1'
+              printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+              printf 'CONFIG_HEAD=%s\n' "$expected_config"
+              printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+              printf '%s\n' 'EXECUTION_PROVIDER=CIRCLECI'
+              printf '%s\n' 'HOST_ARCH=AARCH64'
+              printf '%s\n' 'RUNTIME_PAGE_SIZE=4096'
+              printf '%s\n' 'VERIFY_EXIT=0'
+              printf '%s\n' 'DIRECT_EXIT_IDENTITY=PASS'
+              printf '%s\n' 'INVALID_OPCODE_TRAP_IDENTITY=PASS'
+              printf '%s\n' 'BLOCK_CACHE_EXIT_PERSISTENCE=PASS'
+              printf '%s\n' 'TERMINAL_MISMATCH_TRANSACTIONALITY=PASS'
+              printf '%s\n' 'WX_PUBLISH_ENTER_RELEASE=PASS'
+              printf '%s\n' 'NATIVE_AARCH64_TERMINAL_IDENTITY=PASS'
+              printf '%s\n' 'FEATURE_SOURCE_MUTATION=NONE'
+              printf '%s\n' 'DBLYATEM_IDENTICAL_PE_EXECUTION=NOT_RUN'
+              printf '%s\n' 'WINLATOR_EXECUTION=NOT_RUN'
+              printf '%s\n' 'WINLATOR_COMPARISON=NOT_RUN'
+              printf '%s\n' 'MERGE=NOT_RUN'
+            } > "$output/accepted.txt"
+
+            (
+              cd "$output"
+              find . -type f ! -name SHA256SUMS -print0 |
+                LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS
+              sha256sum -c SHA256SUMS
+            )
+
+            (
+              cd /tmp
+              tar -czf "$archive" \
+                dblyatem-pr127-native-aarch64-r1-output
+            )
+            (
+              cd "$artifacts"
+              sha256sum "$(basename "$archive")" > \
+                "$(basename "$archive").sha256"
+            )
+
+            printf '%s\n' 'PR127 NATIVE AARCH64 TERMINAL IDENTITY: PASS'
+            printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+            printf 'CONFIG_HEAD=%s\n' "$expected_config"
+            printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
+            printf '%s\n' 'DIRECT_EXIT_IDENTITY=PASS'
+            printf '%s\n' 'INVALID_OPCODE_TRAP_IDENTITY=PASS'
+            printf '%s\n' 'BLOCK_CACHE_EXIT_PERSISTENCE=PASS'
+            printf '%s\n' 'TERMINAL_MISMATCH_TRANSACTIONALITY=PASS'
+            printf '%s\n' 'WX_PUBLISH_ENTER_RELEASE=PASS'
+            printf '%s\n' 'NATIVE_AARCH64_TERMINAL_IDENTITY=PASS'
+            printf '%s\n' 'MERGE=NOT_RUN'
+
+      - store_artifacts:
+          path: /tmp/dblyatem-pr127-native-aarch64-r1-artifacts
+          destination: dblyatem-pr127-native-aarch64-r1-artifacts
+          when: always
+
+workflows:
+  pr127-native-aarch64-r1:
+    when: << pipeline.parameters.run_pr127_native_aarch64_r1 >>
+    jobs:
+      - pr127-native-aarch64-r1
