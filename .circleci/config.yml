@@ -21,8 +21,8 @@ jobs:
               apt-get update
             sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
               apt-get install -y --no-install-recommends \
-                gcc clang make file binutils util-linux coreutils \
-                grep sed findutils gawk tar gzip curl ca-certificates
+                git gcc clang make file binutils util-linux coreutils \
+                grep sed findutils gawk tar gzip ca-certificates
 
       - run:
           name: Verify exact PR127 native terminal identity
@@ -32,18 +32,21 @@ jobs:
             expected_branch='deadbyte/pr127-native-aarch64-circleci-r1'
             expected_feature='67fa06ddb80dafe80d8761e34b5c5474fc106c6f'
             expected_config="${CIRCLE_SHA1}"
-            expected_challenge='eb5e0460ea44aaf0ba73a73cbc5ec191acece69ed286249a2ccf40af89de1dc1'
-            source_url="https://codeload.github.com/Deadbytes101/DBLYATEM/tar.gz/${expected_feature}"
+            expected_challenge='994d2c120e914216d1dde5ba88128f8383f0bfeb675e42277c0cbde2563ebc42'
+            source_url='https://github.com/Deadbytes101/DBLYATEM.git'
+            source_ref='refs/pull/127/head'
 
             checkout='/tmp/dblyatem-pr127-native-checkout'
-            stage='/tmp/dblyatem-pr127-native-stage'
-            source_archive='/tmp/dblyatem-pr127-native-source.tar.gz'
+            git_home='/tmp/dblyatem-pr127-native-git-home'
             output='/tmp/dblyatem-pr127-native-aarch64-r1-output'
             artifacts='/tmp/dblyatem-pr127-native-aarch64-r1-artifacts'
+            source_archive='/tmp/dblyatem-pr127-native-source.tar.gz'
             archive="$artifacts/pr127-native-aarch64-r1.tar.gz"
 
-            rm -rf "$checkout" "$stage" "$output" "$artifacts" "$source_archive"
-            mkdir -p "$stage" "$output" "$artifacts"
+            rm -rf \
+              "$checkout" "$git_home" "$output" "$artifacts" \
+              "$source_archive"
+            mkdir -p "$git_home" "$output" "$artifacts"
 
             [ "${CIRCLE_BRANCH:-}" = "$expected_branch" ] || {
               printf 'BRANCH MISMATCH expected=%s actual=%s\n' \
@@ -79,61 +82,62 @@ jobs:
                 ;;
             esac
 
-            curl \
-              --fail \
-              --silent \
-              --show-error \
-              --location \
-              --retry 3 \
-              --retry-all-errors \
-              --proto '=https' \
-              --tlsv1.2 \
-              "$source_url" \
-              --output "$source_archive"
+            export HOME="$git_home"
+            export XDG_CONFIG_HOME="$git_home/.config"
+            export GIT_CONFIG_NOSYSTEM=1
+            export GIT_CONFIG_GLOBAL=/dev/null
+            export GIT_TERMINAL_PROMPT=0
+            unset GIT_ASKPASS SSH_ASKPASS GITHUB_TOKEN GH_TOKEN || true
 
-            [ -s "$source_archive" ] || {
-              printf '%s\n' 'EXACT FEATURE SOURCE ARCHIVE IS EMPTY' >&2
+            git init "$checkout"
+            git -C "$checkout" remote add origin "$source_url"
+
+            git -C "$checkout" \
+              -c credential.helper= \
+              -c core.askPass= \
+              fetch \
+              --no-tags \
+              --depth=1 \
+              origin \
+              "$source_ref"
+
+            git -C "$checkout" checkout --detach FETCH_HEAD
+
+            observed_feature=$(git -C "$checkout" rev-parse HEAD)
+            [ "$observed_feature" = "$expected_feature" ] || {
+              printf 'FEATURE HEAD MISMATCH expected=%s actual=%s\n' \
+                "$expected_feature" "$observed_feature" >&2
               exit 1
             }
 
-            if tar -tzf "$source_archive" |
-              grep -E '(^/|(^|/)\.\.(/|$))' >/dev/null
-            then
-              printf '%s\n' 'SOURCE ARCHIVE PATH TRAVERSAL REJECTED' >&2
+            tracked_dirty=$(git -C "$checkout" status --porcelain --untracked-files=no)
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'FRESH FEATURE CHECKOUT TRACKED DIRTY' >&2
+              printf '%s\n' "$tracked_dirty" >&2
               exit 1
-            fi
+            }
 
+            verifier='tools/verify-linux-arm64-translation-entry.sh'
+            mode_line=$(git -C "$checkout" ls-files -s "$verifier")
+            printf '%s\n' "$mode_line" | grep -Eq '^100755 ' || {
+              printf 'VERIFIER MODE REJECTED file=%s mode=%s\n' \
+                "$verifier" "$mode_line" >&2
+              exit 1
+            }
+
+            git -C "$checkout" archive \
+              --format=tar.gz \
+              --output="$source_archive" \
+              "$expected_feature"
             source_archive_sha=$(sha256sum "$source_archive" | awk '{print $1}')
-
-            tar -xzf "$source_archive" -C "$stage"
-
-            top_count=$(find "$stage" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
-            [ "$top_count" = '1' ] || {
-              printf 'SOURCE ARCHIVE TOP-LEVEL COUNT REJECTED: %s\n' \
-                "$top_count" >&2
-              exit 1
-            }
-
-            source_root=$(find "$stage" -mindepth 1 -maxdepth 1 -type d -print -quit)
-            [ -n "$source_root" ] && [ -d "$source_root" ] || {
-              printf '%s\n' 'SOURCE ARCHIVE ROOT DIRECTORY MISSING' >&2
-              exit 1
-            }
-
-            mv "$source_root" "$checkout"
-            rmdir "$stage"
-
-            verifier="$checkout/tools/verify-linux-arm64-translation-entry.sh"
-            [ -x "$verifier" ] || {
-              printf 'VERIFIER EXECUTABLE MODE REJECTED: %s\n' "$verifier" >&2
-              exit 1
-            }
 
             source_manifest()
             {
               (
                 cd "$checkout"
-                find . -path './build' -prune -o -type f -print0 |
+                find . \
+                  \( -path './.git' -o -path './build' \) -prune -o \
+                  -type f -print0 |
                   LC_ALL=C sort -z |
                   xargs -0 sha256sum
               )
@@ -143,18 +147,20 @@ jobs:
             source_before_sha=$(sha256sum "$output/source-before.sha256" | awk '{print $1}')
 
             {
-              printf '%s\n' 'DBLYATEM_PR127_NATIVE_AARCH64_HOST_V2'
-              printf 'FEATURE_HEAD=%s\n' "$expected_feature"
+              printf '%s\n' 'DBLYATEM_PR127_NATIVE_AARCH64_HOST_V3'
+              printf 'FEATURE_HEAD=%s\n' "$observed_feature"
               printf 'CONFIG_HEAD=%s\n' "$expected_config"
               printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
               printf 'SOURCE_URL=%s\n' "$source_url"
+              printf 'SOURCE_REF=%s\n' "$source_ref"
               printf 'SOURCE_ARCHIVE_SHA256=%s\n' "$source_archive_sha"
               printf 'SOURCE_MANIFEST_BEFORE_SHA256=%s\n' "$source_before_sha"
               printf 'MACHINE=%s\n' "$machine"
               printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
               printf 'VIRTUALIZATION=%s\n' "${virtualization:-none}"
-              printf '%s\n' 'FEATURE_ACQUISITION=GITHUB_CODELOAD_EXACT_SHA'
-              printf '%s\n' 'GIT_CREDENTIAL_USE=NONE'
+              printf '%s\n' 'FEATURE_ACQUISITION=ISOLATED_ANONYMOUS_GIT_HTTPS'
+              printf '%s\n' 'CIRCLECI_CHECKOUT=NOT_USED'
+              printf '%s\n' 'GIT_CREDENTIAL_HELPER=DISABLED'
               printf '%s\n' 'DBLYATEM_IDENTICAL_PE_EXECUTION=NOT_RUN'
               printf '%s\n' 'WINLATOR_EXECUTION=NOT_RUN'
               printf '%s\n' 'WINLATOR_COMPARISON=NOT_RUN'
@@ -173,11 +179,19 @@ jobs:
             source_manifest > "$output/source-after.sha256"
             source_after_sha=$(sha256sum "$output/source-after.sha256" | awk '{print $1}')
 
-            [ "$source_after_sha" = "$source_before_sha" ] || {
+            if ! cmp -s "$output/source-before.sha256" "$output/source-after.sha256"
+            then
               cp "$output/source-before.sha256" "$artifacts/source-before.failed.sha256"
               cp "$output/source-after.sha256" "$artifacts/source-after.failed.sha256"
               printf 'FEATURE SOURCE MANIFEST CHANGED before=%s after=%s\n' \
                 "$source_before_sha" "$source_after_sha" >&2
+              exit 1
+            fi
+
+            tracked_dirty_after=$(git -C "$checkout" status --porcelain --untracked-files=no)
+            [ -z "$tracked_dirty_after" ] || {
+              printf '%s\n' 'POST-VERIFY TRACKED DIRTY' >&2
+              printf '%s\n' "$tracked_dirty_after" >&2
               exit 1
             }
 
@@ -240,16 +254,18 @@ jobs:
             fi
 
             {
-              printf '%s\n' 'DBLYATEM_PR127_NATIVE_AARCH64_ACCEPTED_V2'
+              printf '%s\n' 'DBLYATEM_PR127_NATIVE_AARCH64_ACCEPTED_V3'
               printf 'FEATURE_HEAD=%s\n' "$expected_feature"
               printf 'CONFIG_HEAD=%s\n' "$expected_config"
               printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
               printf 'SOURCE_URL=%s\n' "$source_url"
+              printf 'SOURCE_REF=%s\n' "$source_ref"
               printf 'SOURCE_ARCHIVE_SHA256=%s\n' "$source_archive_sha"
               printf 'SOURCE_MANIFEST_SHA256=%s\n' "$source_before_sha"
               printf '%s\n' 'EXECUTION_PROVIDER=CIRCLECI'
-              printf '%s\n' 'FEATURE_ACQUISITION=GITHUB_CODELOAD_EXACT_SHA'
-              printf '%s\n' 'GIT_CREDENTIAL_USE=NONE'
+              printf '%s\n' 'FEATURE_ACQUISITION=ISOLATED_ANONYMOUS_GIT_HTTPS'
+              printf '%s\n' 'CIRCLECI_CHECKOUT=NOT_USED'
+              printf '%s\n' 'GIT_CREDENTIAL_HELPER=DISABLED'
               printf '%s\n' 'HOST_ARCH=AARCH64'
               printf '%s\n' 'RUNTIME_PAGE_SIZE=4096'
               printf '%s\n' 'VERIFY_EXIT=0'
