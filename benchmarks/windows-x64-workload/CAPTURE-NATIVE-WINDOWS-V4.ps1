@@ -1,8 +1,8 @@
 # DBLYATEM NATIVE WINDOWS V4 EVIDENCE CAPTURE
 #
-# V4 preserves the reviewed V3 capture logic byte-for-byte except for the
-# immutable workload commit/blob binding. V3 correctly rejected the stale
-# c5713098 blob because it contained 174733 bytes instead of 3073 bytes.
+# V4 preserves the reviewed V3 capture logic except for the immutable
+# workload commit/blob binding and one exact UInt16 little-endian reader fix.
+# V3 correctly rejected stale source objects before native execution.
 
 [CmdletBinding()]
 param(
@@ -18,6 +18,9 @@ $OldWorkloadCommit = 'c57130981bca654f33d6a832aecd0d8348b6c02d'
 $NewWorkloadCommit = '6da963345f55daf7c384568644cacd7ce5be6371'
 $OldSourceBlobSha1 = '87155048d6ef4d56cb9323ef20fc6b8b1850af0e'
 $NewSourceBlobSha1 = 'd5f7d3e6fca91683d8f7d783647fabe3a693f293'
+
+$OldUInt16Reader = 'return [uint16]($Bytes[$Offset] -bor ($Bytes[$Offset + 1] -shl 8))'
+$NewUInt16Reader = 'return [uint16]([uint32]$Bytes[$Offset] -bor ([uint32]$Bytes[$Offset + 1] -shl 8))'
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $HarnessV3 = Join-Path $ScriptRoot 'CAPTURE-NATIVE-WINDOWS-V3.ps1'
@@ -81,12 +84,32 @@ if ($SourceBlobBindingCount -ne 1) {
     )
 }
 
+$UInt16ReaderCount = (
+    [System.Text.RegularExpressions.Regex]::Matches(
+        $V3Text,
+        [System.Text.RegularExpressions.Regex]::Escape(
+            $OldUInt16Reader
+        ),
+        [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+    )
+).Count
+
+if ($UInt16ReaderCount -ne 1) {
+    throw (
+        'V3 UINT16 READER BINDING COUNT MISMATCH ' +
+        "expected=1 actual=$UInt16ReaderCount"
+    )
+}
+
 $V4Text = $V3Text.Replace(
     $OldWorkloadCommit,
     $NewWorkloadCommit
 ).Replace(
     $OldSourceBlobSha1,
     $NewSourceBlobSha1
+).Replace(
+    $OldUInt16Reader,
+    $NewUInt16Reader
 )
 
 if ($V4Text.Contains($OldWorkloadCommit)) {
@@ -95,6 +118,14 @@ if ($V4Text.Contains($OldWorkloadCommit)) {
 
 if ($V4Text.Contains($OldSourceBlobSha1)) {
     throw 'STALE SOURCE BLOB REMAINED AFTER V4 PATCH'
+}
+
+if ($V4Text.Contains($OldUInt16Reader)) {
+    throw 'STALE UINT16 READER REMAINED AFTER V4 PATCH'
+}
+
+if (-not $V4Text.Contains($NewUInt16Reader)) {
+    throw 'FIXED UINT16 READER ABSENT AFTER V4 PATCH'
 }
 
 $TemporaryRoot = Join-Path (
@@ -112,10 +143,27 @@ try {
         [System.Text.UTF8Encoding]::new($false)
     )
 
+    $Tokens = $null
+    $ParseErrors = $null
+    $null = [System.Management.Automation.Language.Parser]::ParseFile(
+        $TemporaryHarness,
+        [ref]$Tokens,
+        [ref]$ParseErrors
+    )
+
+    if (@($ParseErrors).Count -ne 0) {
+        $Details = @(
+            $ParseErrors |
+            ForEach-Object { $_.Message }
+        ) -join "`n"
+        throw "V4 INNER POWERSHELL PARSER FAILURE`n$Details"
+    }
+
     Write-Host 'DBLYATEM NATIVE WINDOWS V4 BINDING: PASS'
     Write-Host ('V3_HARNESS_BLOB_SHA1=' + $ObservedHarnessV3BlobSha1)
     Write-Host ('WORKLOAD_COMMIT=' + $NewWorkloadCommit)
     Write-Host ('SOURCE_BLOB_SHA1=' + $NewSourceBlobSha1)
+    Write-Host 'UINT16_LE_READER_FIX=APPLIED'
 
     if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
         & powershell.exe `
