@@ -263,13 +263,19 @@ db_linux_arm64_translation_entry_status
     }
 
     completed.terminal_return_observed = 1u;
+    completed.observed_kind = planned_context.observed_exit.kind;
+
+    if (planned_context.observed_exit.kind !=
+        planned_context.planned_exit.kind) {
+        return DB_LINUX_ARM64_TRANSLATION_ENTRY_TERMINAL_EXIT_MISMATCH;
+    }
+
     exit_status = db_translated_terminal_exit_validate_observed(
         &planned_context.observed_exit);
     if (exit_status != DB_TRANSLATED_TERMINAL_EXIT_OK) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_BAD_TERMINAL_EXIT;
     }
 
-    completed.observed_kind = planned_context.observed_exit.kind;
     exit_status = db_translated_terminal_exit_match(
         &planned_context.planned_exit,
         &planned_context.observed_exit);
