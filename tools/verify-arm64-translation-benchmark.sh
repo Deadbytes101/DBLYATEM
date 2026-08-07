@@ -22,6 +22,7 @@ $root/src/arm64_translation_reuse_lookup.c
 $root/src/arm64_translation_reuse_publish.c
 $root/src/arm64_translation_reuse_names.c
 $root/src/arm64_block_cache.c
+$root/src/translated_terminal_exit.c
 "
 public_header="$root/include/dblyat/arm64_translation_benchmark.h"
 manifest_template="$root/benchmarks/arm64-translation-reuse/manifest-v1.txt"
@@ -235,5 +236,6 @@ printf '%s\n' 'ARM64 TRANSLATION BENCHMARK RECORD CONTRACT: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK OUTPUT PAIR: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK RAW CSV V1: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK MONOTONIC RAW RUNNER: PASS'
+printf '%s\n' 'ARM64 TRANSLATION BENCHMARK TERMINAL METADATA COMPATIBILITY: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK NONEXECUTING BOUNDARY: PASS'
 printf '%s\n' 'ARM64 TRANSLATION BENCHMARK WINLATOR CLAIM: NOT RUN'

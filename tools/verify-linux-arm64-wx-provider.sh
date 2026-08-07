@@ -6,7 +6,7 @@ build="$root/build/linux-arm64-wx-provider-verify"
 common='-Iinclude -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wshadow -Wstrict-prototypes -Wmissing-prototypes'
 sources='src/linux_arm64_wx_provider.c'
 posix_sources='src/linux_arm64_wx_provider.c src/linux_arm64_wx_posix.c'
-published_sources='src/arm64_published_block.c'
+published_sources='src/arm64_published_block.c src/translated_terminal_exit.c'
 
 rm -rf "$build"
 mkdir -p "$build"

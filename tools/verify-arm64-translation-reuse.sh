@@ -14,6 +14,7 @@ $root/src/arm64_translation_reuse_lookup.c
 $root/src/arm64_translation_reuse_publish.c
 $root/src/arm64_translation_reuse_names.c
 $root/src/arm64_block_cache.c
+$root/src/translated_terminal_exit.c
 $root/tests/arm64_translation_reuse_test_support.c
 "
 test_files="
@@ -26,6 +27,7 @@ $root/tests/arm64_translation_reuse_publish_alias_test.c
 "
 header_file="$root/include/dblyat/arm64_translation_reuse.h"
 internal_header="$root/src/arm64_translation_reuse_internal.h"
+terminal_header="$root/include/dblyat/translated_terminal_exit.h"
 
 for compiler in gcc clang
 do
@@ -65,7 +67,7 @@ clang -I"$root/include" -I"$root/src" -I"$root/tests" \
 
 if grep -E \
     '(^|[^[:alnum:]_])(malloc|calloc|realloc|free|mmap|munmap|mprotect|VirtualAlloc|VirtualProtect|pthread_|atomic_|__atomic|__sync|clock|clock_gettime|gettimeofday|time|rdtsc|PROT_EXEC|MAP_JIT|clear_cache)([^[:alnum:]_]|$)' \
-    $source_files "$header_file" "$internal_header" >/dev/null
+    $source_files "$header_file" "$internal_header" "$terminal_header" >/dev/null
 then
     printf '%s\n' \
         'ARM64 TRANSLATION REUSE VERIFY: forbidden timing, ownership, concurrency, or execution API' >&2
@@ -94,4 +96,5 @@ printf '%s\n' 'ARM64 TRANSLATION REUSE VERIFY: PASS'
 printf '%s\n' 'ARM64 TRANSLATION REUSE WORKLOAD METRICS: PASS'
 printf '%s\n' 'ARM64 TRANSLATION REUSE DETERMINISTIC REPLAY: PASS'
 printf '%s\n' 'ARM64 TRANSLATION REUSE TRANSACTIONAL BOUNDARY: PASS'
+printf '%s\n' 'ARM64 TRANSLATION REUSE TERMINAL METADATA COMPATIBILITY: PASS'
 printf '%s\n' 'ARM64 TRANSLATION REUSE NONEXECUTING BOUNDARY: PASS'
