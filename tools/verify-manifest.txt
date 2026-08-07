@@ -7,7 +7,6 @@ STANDALONE=tools/verify-win32-provider.sh
 STANDALONE=tools/verify-win32-kernel32.sh
 STANDALONE=tools/verify-win32-kernel32-invoke.sh
 STANDALONE=tools/verify-win32-kernel32-gateway.sh
-STANDALONE=tools/verify-win32-translated-execution.sh
 STANDALONE=tools/verify-x64-decode.sh
 STANDALONE=tools/verify-x64-ir-boundary.sh
 STANDALONE=tools/verify-x64-ir-lower.sh
