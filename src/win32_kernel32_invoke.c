@@ -67,6 +67,10 @@ static bool db_win32_kernel32_invoke_identity_valid(
         expected_symbol = DB_WIN32_SYMBOL_KERNEL32_SET_LAST_ERROR;
         expected_arguments = 1u;
         break;
+    case DB_WIN32_HANDLER_KERNEL32_EXIT_PROCESS:
+        expected_symbol = DB_WIN32_SYMBOL_KERNEL32_EXIT_PROCESS;
+        expected_arguments = 1u;
+        break;
     default:
         return false;
     }
