@@ -17,7 +17,7 @@ clang $common tests/win32_kernel32_test.c src/win32_kernel32.c \
     -o "$build/clang-test"
 "$build/clang-test"
 
-clang -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     tests/win32_kernel32_test.c src/win32_kernel32.c \
     -o "$build/sanitizer-test"
