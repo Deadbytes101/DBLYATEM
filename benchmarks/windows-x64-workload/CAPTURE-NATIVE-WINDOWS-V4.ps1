@@ -47,12 +47,38 @@ $V3Text = [System.IO.File]::ReadAllText(
     [System.Text.Encoding]::UTF8
 )
 
-if (($V3Text.Split($OldWorkloadCommit).Count - 1) -ne 1) {
-    throw 'V3 WORKLOAD COMMIT BINDING COUNT MISMATCH'
+$WorkloadCommitBindingCount = (
+    [System.Text.RegularExpressions.Regex]::Matches(
+        $V3Text,
+        [System.Text.RegularExpressions.Regex]::Escape(
+            $OldWorkloadCommit
+        ),
+        [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+    )
+).Count
+
+if ($WorkloadCommitBindingCount -ne 1) {
+    throw (
+        'V3 WORKLOAD COMMIT BINDING COUNT MISMATCH ' +
+        "expected=1 actual=$WorkloadCommitBindingCount"
+    )
 }
 
-if (($V3Text.Split($OldSourceBlobSha1).Count - 1) -ne 1) {
-    throw 'V3 SOURCE BLOB BINDING COUNT MISMATCH'
+$SourceBlobBindingCount = (
+    [System.Text.RegularExpressions.Regex]::Matches(
+        $V3Text,
+        [System.Text.RegularExpressions.Regex]::Escape(
+            $OldSourceBlobSha1
+        ),
+        [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+    )
+).Count
+
+if ($SourceBlobBindingCount -ne 1) {
+    throw (
+        'V3 SOURCE BLOB BINDING COUNT MISMATCH ' +
+        "expected=1 actual=$SourceBlobBindingCount"
+    )
 }
 
 $V4Text = $V3Text.Replace(
