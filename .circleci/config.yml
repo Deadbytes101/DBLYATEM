@@ -13,6 +13,8 @@ jobs:
     shell: /bin/bash -eo pipefail
 
     steps:
+      - checkout
+
       - run:
           name: Install strict native toolchain
           command: |
@@ -29,23 +31,59 @@ jobs:
           command: |
             set -euo pipefail
 
-            repository='https://github.com/Deadbytes101/DBLYATEM.git'
             expected_branch='deadbyte/pr127-native-aarch64-circleci-r1'
             expected_feature='67fa06ddb80dafe80d8761e34b5c5474fc106c6f'
             expected_config="${CIRCLE_SHA1}"
             expected_challenge='a0054dc424a3617b5ab5f440b6397b3c75ff5d9ff311c420559bf71b48c03237'
 
+            source_checkout="$PWD"
             checkout='/tmp/dblyatem-pr127-native-checkout'
             output='/tmp/dblyatem-pr127-native-aarch64-r1-output'
             artifacts='/tmp/dblyatem-pr127-native-aarch64-r1-artifacts'
             archive="$artifacts/pr127-native-aarch64-r1.tar.gz"
 
             rm -rf "$checkout" "$output" "$artifacts"
-            mkdir -p "$checkout" "$output" "$artifacts"
+            mkdir -p "$output" "$artifacts"
 
             [ "${CIRCLE_BRANCH:-}" = "$expected_branch" ] || {
               printf 'BRANCH MISMATCH expected=%s actual=%s\n' \
                 "$expected_branch" "${CIRCLE_BRANCH:-missing}" >&2
+              exit 1
+            }
+
+            observed_config=$(git -C "$source_checkout" rev-parse HEAD)
+            [ "$observed_config" = "$expected_config" ] || {
+              printf 'CONFIG HEAD MISMATCH expected=%s actual=%s\n' \
+                "$expected_config" "$observed_config" >&2
+              exit 1
+            }
+
+            config_dirty=$(git -C "$source_checkout" status --porcelain --untracked-files=no)
+            [ -z "$config_dirty" ] || {
+              printf '%s\n' 'EVIDENCE CONFIG CHECKOUT TRACKED DIRTY' >&2
+              printf '%s\n' "$config_dirty" >&2
+              exit 1
+            }
+
+            git -C "$source_checkout" cat-file -e "$expected_feature^{commit}" || {
+              printf 'FEATURE COMMIT MISSING FROM BUILT-IN CHECKOUT: %s\n' \
+                "$expected_feature" >&2
+              exit 1
+            }
+
+            git -C "$source_checkout" worktree add --detach "$checkout" "$expected_feature"
+
+            observed_feature=$(git -C "$checkout" rev-parse HEAD)
+            [ "$observed_feature" = "$expected_feature" ] || {
+              printf 'FEATURE HEAD MISMATCH expected=%s actual=%s\n' \
+                "$expected_feature" "$observed_feature" >&2
+              exit 1
+            }
+
+            tracked_dirty=$(git -C "$checkout" status --porcelain --untracked-files=no)
+            [ -z "$tracked_dirty" ] || {
+              printf '%s\n' 'FRESH FEATURE WORKTREE TRACKED DIRTY' >&2
+              printf '%s\n' "$tracked_dirty" >&2
               exit 1
             }
 
@@ -77,24 +115,6 @@ jobs:
                 ;;
             esac
 
-            git init "$checkout"
-            git -C "$checkout" remote add origin "$repository"
-            git -C "$checkout" fetch --depth=1 origin "$expected_feature"
-            git -C "$checkout" checkout --detach FETCH_HEAD
-
-            observed_feature=$(git -C "$checkout" rev-parse HEAD)
-            [ "$observed_feature" = "$expected_feature" ] || {
-              printf 'FEATURE HEAD MISMATCH expected=%s actual=%s\n' \
-                "$expected_feature" "$observed_feature" >&2
-              exit 1
-            }
-
-            tracked_dirty=$(git -C "$checkout" status --porcelain --untracked-files=no)
-            [ -z "$tracked_dirty" ] || {
-              printf '%s\n' 'FRESH CHECKOUT TRACKED DIRTY' >&2
-              exit 1
-            }
-
             verifier='tools/verify-linux-arm64-translation-entry.sh'
             mode_line=$(git -C "$checkout" ls-files -s "$verifier")
             printf '%s\n' "$mode_line" | grep -Eq '^100755 ' || {
@@ -112,6 +132,7 @@ jobs:
               printf 'RUNTIME_PAGE_SIZE=%s\n' "$page_size"
               printf 'VIRTUALIZATION=%s\n' "${virtualization:-none}"
               printf '%s\n' 'FRESH_CHECKOUT_DIRTY=NO'
+              printf '%s\n' 'FEATURE_SOURCE_MUTATION=NONE'
               printf '%s\n' 'DBLYATEM_IDENTICAL_PE_EXECUTION=NOT_RUN'
               printf '%s\n' 'WINLATOR_EXECUTION=NOT_RUN'
               printf '%s\n' 'WINLATOR_COMPARISON=NOT_RUN'
@@ -238,7 +259,7 @@ jobs:
             printf 'EVIDENCE_CHALLENGE=%s\n' "$expected_challenge"
             printf '%s\n' 'DIRECT_EXIT_IDENTITY=PASS'
             printf '%s\n' 'INVALID_OPCODE_TRAP_IDENTITY=PASS'
-            printf '%s\n' 'BLOCK_CACHE_EXIT_PERSISTENCE=PASS'
+            printf '%s\n' 'BLOCK_CACHE_EXIT PERSISTENCE=PASS'
             printf '%s\n' 'TERMINAL_MISMATCH_TRANSACTIONALITY=PASS'
             printf '%s\n' 'WX_PUBLISH_ENTER_RELEASE=PASS'
             printf '%s\n' 'NATIVE_AARCH64_TERMINAL_IDENTITY=PASS'
