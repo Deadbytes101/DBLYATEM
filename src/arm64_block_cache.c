@@ -74,15 +74,32 @@ static bool key_valid(uint64_t guest_source_rip,
            source_generation != 0u;
 }
 
-static bool terminal_exit_valid_or_unbound(
-    const db_translated_terminal_exit *exit_record)
+static bool terminal_exit_binding_valid(
+    const db_arm64_published_block *block,
+    uint64_t guest_end)
 {
+    const db_translated_terminal_exit *exit_record =
+        &block->terminal_exit;
+
     if (zero_bytes(exit_record, sizeof(*exit_record))) {
         return true;
     }
 
-    return db_translated_terminal_exit_validate_planned(exit_record) ==
-           DB_TRANSLATED_TERMINAL_EXIT_OK;
+    if (db_translated_terminal_exit_validate_planned(exit_record) !=
+            DB_TRANSLATED_TERMINAL_EXIT_OK ||
+        exit_record->source_rip < block->guest_source_rip ||
+        exit_record->source_rip >= guest_end) {
+        return false;
+    }
+
+    if (exit_record->kind ==
+        (uint32_t)DB_TRANSLATED_TERMINAL_EXIT_CONDITIONAL) {
+        return block->guest_fallthrough_rip != 0u &&
+               exit_record->fallthrough_target ==
+                   block->guest_fallthrough_rip;
+    }
+
+    return true;
 }
 
 static bool block_valid(const db_arm64_published_block *block)
@@ -108,7 +125,6 @@ static bool block_valid(const db_arm64_published_block *block)
         (block->host_mapping_address & UINT64_C(4095)) != 0u ||
         (block->host_entry_address & UINT64_C(3)) != 0u ||
         (block->host_allocation_size & UINT64_C(4095)) != 0u ||
-        !terminal_exit_valid_or_unbound(&block->terminal_exit) ||
         !zero_bytes(block->reserved, sizeof(block->reserved))) {
         return false;
     }
@@ -126,6 +142,7 @@ static bool block_valid(const db_arm64_published_block *block)
         (block->guest_fallthrough_rip != 0u &&
          !x64_address_is_canonical(
              block->guest_fallthrough_rip)) ||
+        !terminal_exit_binding_valid(block, guest_end) ||
         !add_u64(block->host_mapping_address,
                  block->host_allocation_size - UINT64_C(1),
                  &allocation_end) ||
