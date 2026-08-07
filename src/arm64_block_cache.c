@@ -74,6 +74,17 @@ static bool key_valid(uint64_t guest_source_rip,
            source_generation != 0u;
 }
 
+static bool terminal_exit_valid_or_unbound(
+    const db_translated_terminal_exit *exit_record)
+{
+    if (zero_bytes(exit_record, sizeof(*exit_record))) {
+        return true;
+    }
+
+    return db_translated_terminal_exit_validate_planned(exit_record) ==
+           DB_TRANSLATED_TERMINAL_EXIT_OK;
+}
+
 static bool block_valid(const db_arm64_published_block *block)
 {
     uint64_t guest_end;
@@ -97,6 +108,7 @@ static bool block_valid(const db_arm64_published_block *block)
         (block->host_mapping_address & UINT64_C(4095)) != 0u ||
         (block->host_entry_address & UINT64_C(3)) != 0u ||
         (block->host_allocation_size & UINT64_C(4095)) != 0u ||
+        !terminal_exit_valid_or_unbound(&block->terminal_exit) ||
         !zero_bytes(block->reserved, sizeof(block->reserved))) {
         return false;
     }
