@@ -1,0 +1,201 @@
+name: PR127 Native AArch64 Terminal Identity R1
+
+on:
+  push:
+    branches:
+      - deadbyte/pr127-native-aarch64-evidence-r1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DBLYATEM_FEATURE_SHA: 67fa06ddb80dafe80d8761e34b5c5474fc106c6f
+
+jobs:
+  native-terminal-identity:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout evidence harness branch
+        uses: actions/checkout@v4
+        with:
+          path: evidence-repo
+
+      - name: Checkout exact PR127 feature head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DBLYATEM_FEATURE_SHA }}
+          path: feature-src
+          fetch-depth: 1
+
+      - name: Install native verification toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gcc clang binutils
+
+      - name: Verify exact feature source boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          actual=$(git -C feature-src rev-parse HEAD)
+          dirty=$(git -C feature-src status --porcelain --untracked-files=no)
+          harness=$(git -C evidence-repo rev-parse HEAD)
+
+          if [ "$actual" != "$DBLYATEM_FEATURE_SHA" ]; then
+              printf 'FEATURE HEAD MISMATCH expected=%s actual=%s\n' \
+                  "$DBLYATEM_FEATURE_SHA" "$actual"
+              exit 90
+          fi
+
+          if [ -n "$dirty" ]; then
+              printf '%s\n' 'EXACT FEATURE CHECKOUT DIRTY'
+              printf '%s\n' "$dirty"
+              exit 91
+          fi
+
+          printf 'FEATURE_SHA=%s\n' "$actual"
+          printf 'EVIDENCE_HARNESS_SHA=%s\n' "$harness"
+          printf '%s\n' 'FEATURE_SOURCE_MUTATION=NONE'
+
+      - name: Capture native host identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          machine=$(uname -m)
+          case "$machine" in
+              aarch64|arm64) ;;
+              *)
+                  printf 'NATIVE HOST REJECTED machine=%s\n' "$machine"
+                  exit 92
+                  ;;
+          esac
+
+          mkdir -p native-evidence
+
+          {
+              printf '%s\n' 'DBLYATEM_PR127_NATIVE_AARCH64_EVIDENCE_V1'
+              printf 'FEATURE_SHA=%s\n' "$DBLYATEM_FEATURE_SHA"
+              printf 'EVIDENCE_HARNESS_SHA=%s\n' \
+                  "$(git -C evidence-repo rev-parse HEAD)"
+              printf 'UNAME_MACHINE=%s\n' "$machine"
+              printf 'KERNEL=%s\n' "$(uname -sr)"
+              printf 'GCC_VERSION=%s\n' "$(gcc --version | head -n 1)"
+              printf 'CLANG_VERSION=%s\n' "$(clang --version | head -n 1)"
+              printf 'READELF_VERSION=%s\n' "$(readelf --version | head -n 1)"
+              printf 'GITHUB_RUN_ID=%s\n' "$GITHUB_RUN_ID"
+              printf 'GITHUB_RUN_ATTEMPT=%s\n' "$GITHUB_RUN_ATTEMPT"
+              printf '%s\n' 'FEATURE_SOURCE_MUTATION=NONE'
+              printf '%s\n' 'WINLATOR_EXECUTION=NOT_RUN'
+              printf '%s\n' 'WINLATOR_COMPARISON=NOT_RUN'
+          } > native-evidence/host.txt
+
+          cat native-evidence/host.txt
+
+      - name: Execute exact-head native translated terminal verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          set +e
+          (
+              cd feature-src
+              tools/verify-linux-arm64-translation-entry.sh
+          ) 2>&1 | tee native-evidence/translation-entry.log
+          rc=${PIPESTATUS[0]}
+          set -e
+
+          printf 'VERIFY_EXIT=%s\n' "$rc" | tee native-evidence/verify-exit.txt
+          [ "$rc" -eq 0 ]
+
+      - name: Adversarially judge native identity markers
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log=native-evidence/translation-entry.log
+
+          require_count() {
+              expected=$1
+              line=$2
+              observed=$(grep -Fxc "$line" "$log" || true)
+              if [ "$observed" -ne "$expected" ]; then
+                  printf 'MARKER COUNT FAIL expected=%s observed=%s line=[%s]\n' \
+                      "$expected" "$observed" "$line"
+                  exit 93
+              fi
+              printf 'MARKER_COUNT=%s LINE=%s\n' "$observed" "$line"
+          }
+
+          require_count 3 'X64 BYTES TO NATIVE ARM64 EXECUTION: PASS'
+          require_count 3 'TRANSLATED DIRECT EXIT IDENTITY: PASS'
+          require_count 3 'TRANSLATED INVALID OPCODE TRAP IDENTITY: PASS'
+          require_count 3 'TRANSLATED BLOCK CACHE EXIT PERSISTENCE: PASS'
+          require_count 3 'TRANSLATED EXIT MISMATCH TRANSACTIONALITY: PASS'
+          require_count 3 'TRANSLATED W^X RELEASE CYCLES: PASS'
+          require_count 1 'X64 TO ARM64 TRANSLATED EXECUTION: PASS'
+          require_count 1 'TRANSLATED TERMINAL EXIT NATIVE IDENTITY: PASS'
+          require_count 1 'TRANSLATED ENTRY ASSEMBLY ABI: PASS'
+          require_count 1 'TRANSLATED TERMINAL EXIT RECORD VALIDATION: PASS'
+          require_count 1 'TRANSLATED TERMINAL EXIT CACHE BINDING: PASS'
+          require_count 1 'TRANSLATED ENTRY TRANSACTIONAL AUDIT: PASS'
+          require_count 1 'TRANSLATED W^X PUBLISH ENTER RELEASE: PASS'
+          require_count 1 'LINUX ARM64 TRANSLATED ENTRY VERIFY: PASS'
+          require_count 1 'WINLATOR COMPARISON: NOT RUN'
+
+          if grep -F 'NOT CLAIMED' "$log" >/dev/null; then
+              printf '%s\n' 'NATIVE VERIFIER EMITTED NOT CLAIMED'
+              grep -F 'NOT CLAIMED' "$log"
+              exit 94
+          fi
+
+          {
+              printf '%s\n' 'DBLYATEM_PR127_NATIVE_AARCH64_ACCEPTED_V1'
+              printf 'FEATURE_SHA=%s\n' "$DBLYATEM_FEATURE_SHA"
+              printf 'EVIDENCE_HARNESS_SHA=%s\n' \
+                  "$(git -C evidence-repo rev-parse HEAD)"
+              printf 'UNAME_MACHINE=%s\n' "$(uname -m)"
+              printf '%s\n' 'VERIFY_EXIT=0'
+              printf '%s\n' 'DIRECT_EXIT_IDENTITY=PASS'
+              printf '%s\n' 'INVALID_OPCODE_TRAP_IDENTITY=PASS'
+              printf '%s\n' 'BLOCK_CACHE_EXIT_PERSISTENCE=PASS'
+              printf '%s\n' 'TERMINAL_MISMATCH_TRANSACTIONALITY=PASS'
+              printf '%s\n' 'WX_PUBLISH_ENTER_RELEASE=PASS'
+              printf '%s\n' 'NATIVE_AARCH64_TERMINAL_IDENTITY=PASS'
+              printf '%s\n' 'FEATURE_SOURCE_MUTATION=NONE'
+              printf '%s\n' 'DBLYATEM_IDENTICAL_PE_EXECUTION=NOT_RUN'
+              printf '%s\n' 'WINLATOR_EXECUTION=NOT_RUN'
+              printf '%s\n' 'WINLATOR_COMPARISON=NOT_RUN'
+              printf '%s\n' 'MERGE=NOT_RUN'
+          } > native-evidence/accepted.txt
+
+          cat native-evidence/accepted.txt
+
+      - name: Bind evidence with SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+              cd native-evidence
+              sha256sum \
+                  host.txt \
+                  translation-entry.log \
+                  verify-exit.txt \
+                  accepted.txt \
+                  > SHA256SUMS
+              sha256sum -c SHA256SUMS
+          )
+          cat native-evidence/SHA256SUMS
+
+      - name: Upload native AArch64 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr127-native-aarch64-${{ env.DBLYATEM_FEATURE_SHA }}-${{ github.run_id }}
+          path: native-evidence
+          if-no-files-found: error
+          retention-days: 30
