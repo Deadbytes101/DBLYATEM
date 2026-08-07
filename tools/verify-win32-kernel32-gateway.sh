@@ -24,13 +24,13 @@ clang $common tests/win32_exit_process_boundary_test.c $sources \
     -o "$build/clang-exit-process-test"
 "$build/clang-exit-process-test"
 
-gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+clang -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     tests/win32_kernel32_gateway_test.c $sources \
     -o "$build/sanitizer-test"
 "$build/sanitizer-test"
 
-gcc -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+clang -Iinclude -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     tests/win32_exit_process_boundary_test.c $sources \
     -o "$build/sanitizer-exit-process-test"
