@@ -55,7 +55,6 @@ bool db_x64_arm64_plan_is_consumer_internal(db_arm64_select_opcode opcode)
            opcode == DB_ARM64_SELECT_LOAD_U64 ||
            opcode == DB_ARM64_SELECT_LOAD_U64_TARGET ||
            opcode == DB_ARM64_SELECT_STORE_U64 ||
-           opcode == DB_ARM64_SELECT_PUSH_GUEST_U64 ||
            opcode == DB_ARM64_SELECT_BRANCH_GUEST_TARGET ||
            opcode == DB_ARM64_SELECT_BRANCH_IF_TRUE;
 }
