@@ -340,3 +340,44 @@ $(BUILD)/dblyatem: src/arm64_translation_store.c \
                    src/win32_translated_demand_run_internal.h \
                    include/dblyat/arm64_translation_store.h \
                    include/dblyat/win32_translated_demand_run.h
+
+CORE += src/win32_provider_tables.c \
+        src/win32_pe_startup.c
+HEADERS += include/dblyat/win32_provider_tables.h \
+           include/dblyat/win32_pe_startup.h
+
+$(BUILD)/dblyatem: src/win32_provider_tables.c \
+                   src/win32_pe_startup.c \
+                   include/dblyat/win32_provider_tables.h \
+                   include/dblyat/win32_pe_startup.h
+
+WIN32_PE_STARTUP_TEST_SOURCES := \
+    src/pe.c src/map.c src/reloc.c src/reloc_apply.c \
+    src/import.c src/bind.c src/iat_plan.c src/iat_apply.c \
+    src/gateway_plan.c src/gateway_emit.c src/gateway_decode.c \
+    src/win32_provider.c src/win32_provider_tables.c src/win32_pe_startup.c \
+    src/x64_block.c src/x64_decode.c src/x64_memory_instruction.c \
+    src/x64_memory_decode.c
+
+$(BUILD)/win32_provider_tables_test: tests/win32_provider_tables_test.c \
+                                      src/win32_provider.c \
+                                      src/win32_provider_tables.c \
+                                      include/dblyat/win32_provider_tables.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/win32_provider_tables_test.c \
+		src/win32_provider.c src/win32_provider_tables.c -o $@
+
+$(BUILD)/win32_pe_startup_test: tests/win32_pe_startup_test.c \
+                                $(WIN32_PE_STARTUP_TEST_SOURCES) \
+                                include/dblyat/win32_pe_startup.h \
+                                include/dblyat/win32_provider_tables.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/win32_pe_startup_test.c \
+		$(WIN32_PE_STARTUP_TEST_SOURCES) -o $@
+
+.PHONY: win32_provider_tables_verify win32_pe_startup_verify
+win32_provider_tables_verify: $(BUILD)/win32_provider_tables_test
+	./$(BUILD)/win32_provider_tables_test
+
+win32_pe_startup_verify: $(BUILD)/win32_pe_startup_test
+	./$(BUILD)/win32_pe_startup_test
+
+test: win32_provider_tables_verify win32_pe_startup_verify
