@@ -72,12 +72,47 @@ static bool db_run_config_valid(
            config->source_generation != 0u &&
            config->format_version == DB_WIN32_TRANSLATED_RUN_FORMAT_VERSION &&
            db_run_zero_bytes(config->reserved, sizeof(config->reserved)) &&
+           (config->guest_memory == NULL ||
+            db_linux_arm64_guest_memory_validate(config->guest_memory) ==
+                DB_LINUX_ARM64_GUEST_RUNTIME_OK) &&
            (config->gateway_buffer_size == 0u ||
             config->gateway_buffer != NULL) &&
            (config->target_count == 0u || config->targets != NULL) &&
            (config->handler_count == 0u || config->handlers != NULL) &&
            (config->signature_count == 0u || config->signatures != NULL) &&
            (config->guest_stack_size == 0u || config->guest_stack != NULL);
+}
+
+static bool db_run_guest_memory_output_overlap(
+    const db_linux_arm64_guest_memory *memory,
+    const void *output,
+    size_t output_size)
+{
+    const void *image;
+    const void *page_plan;
+    const void *stack;
+    const void *gateway;
+
+    if (memory == NULL) {
+        return false;
+    }
+
+    image = (const void *)(uintptr_t)memory->image_host_address;
+    page_plan = (const void *)(uintptr_t)memory->image_page_plan_address;
+    stack = (const void *)(uintptr_t)memory->stack_host_address;
+    gateway = (const void *)(uintptr_t)memory->gateway_host_address;
+
+    return db_run_overlap(output, output_size,
+                          memory, sizeof(*memory)) ||
+           db_run_overlap(output, output_size,
+                          image, (size_t)memory->image_size) ||
+           db_run_overlap(output, output_size,
+                          page_plan, (size_t)memory->image_page_count) ||
+           db_run_overlap(output, output_size,
+                          stack, (size_t)memory->stack_size) ||
+           (memory->gateway_size != 0u &&
+            db_run_overlap(output, output_size,
+                           gateway, (size_t)memory->gateway_size));
 }
 
 static db_win32_translated_run_status db_run_validate_aliases(
@@ -140,7 +175,9 @@ static db_win32_translated_run_status db_run_validate_aliases(
                                 config->signatures, signature_bytes) || \
             DB_RUN_OUTPUT_INPUT((out), (out_size), \
                                 config->guest_stack, \
-                                config->guest_stack_size)) { \
+                                config->guest_stack_size) || \
+            db_run_guest_memory_output_overlap( \
+                config->guest_memory, (out), (out_size))) { \
             return DB_WIN32_TRANSLATED_RUN_BUFFER_OVERLAP; \
         } \
     } while (0)
@@ -220,8 +257,9 @@ static db_win32_translated_execution_status db_run_real_executor(
 {
     (void)context;
 
-    return db_win32_translated_execution_step(
+    return db_win32_translated_execution_step_with_guest_memory(
         published,
+        config->guest_memory,
         config->gateway_buffer,
         config->gateway_buffer_size,
         config->targets,
