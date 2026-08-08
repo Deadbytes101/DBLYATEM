@@ -46,7 +46,7 @@ static db_arm64_select_record select_record(
 static int mixed_plan(void)
 {
     db_arm64_select_record in[8];
-    db_x64_arm64_plan_record out[24];
+    db_x64_arm64_plan_record out[40];
     db_x64_arm64_plan_record tail;
     db_x64_arm64_plan_summary s;
     uint32_t gpr2 = (uint32_t)offsetof(db_x64_scalar_state, registers[2]);
@@ -91,10 +91,10 @@ static int mixed_plan(void)
     in[7].value = UINT64_C(0x2000);
 
     fill(out, sizeof(out), UINT8_C(0xa5));
-    tail = out[18];
-    CHECK(db_x64_arm64_plan_block(in, 8u, out, 24u, &s) ==
+    tail = out[29];
+    CHECK(db_x64_arm64_plan_block(in, 8u, out, 40u, &s) ==
           DB_X64_ARM64_PLAN_OK);
-    CHECK(s.plan_count == 18u && s.required_capacity == 18u);
+    CHECK(s.plan_count == 29u && s.required_capacity == 29u);
     CHECK(s.has_terminal == 1u &&
           s.terminal_helper == DB_X64_ARM64_HELPER_DISPATCH_DIRECT);
     CHECK(out[0].opcode == DB_X64_ARM64_PLAN_MOVZ_U16 &&
@@ -110,16 +110,50 @@ static int mixed_plan(void)
           out[8].opcode == DB_X64_ARM64_PLAN_LOAD_STATE_U64 &&
           out[9].opcode == DB_X64_ARM64_PLAN_EOR_REGISTER &&
           out[10].opcode == DB_X64_ARM64_PLAN_STORE_STATE_U64);
-    CHECK(out[11].helper == DB_X64_ARM64_HELPER_UPDATE_LOGIC_FLAGS);
-    CHECK(out[12].helper == DB_X64_ARM64_HELPER_FORM_GUEST_ADDRESS &&
-          out[12].address_mode == DB_IR_ADDRESS_BASE_INDEX);
-    CHECK(out[13].helper == DB_X64_ARM64_HELPER_READ_GUEST_U64 &&
-          out[14].opcode == DB_X64_ARM64_PLAN_STORE_STATE_U64);
+
+    CHECK(out[11].opcode == DB_X64_ARM64_PLAN_MOVZ_U16 &&
+          out[11].host_destination == DB_X64_ARM64_HELPER_ARG0 &&
+          out[11].immediate16 == UINT16_C(64));
+    CHECK(out[12].opcode == DB_X64_ARM64_PLAN_MOVZ_U16 &&
+          out[12].host_destination == DB_X64_ARM64_HELPER_ARG1 &&
+          out[12].immediate16 == UINT16_C(3));
+    CHECK(out[13].helper == DB_X64_ARM64_HELPER_UPDATE_LOGIC_FLAGS &&
+          out[13].width == DB_IR_WIDTH_64 && out[13].guest_register == 3u);
+
+    CHECK(out[14].opcode == DB_X64_ARM64_PLAN_MOVZ_U16 &&
+          out[14].host_destination == DB_X64_ARM64_HELPER_ARG0 &&
+          out[14].immediate16 == 0u);
     CHECK(out[15].opcode == DB_X64_ARM64_PLAN_MOVZ_U16 &&
-          out[16].helper == DB_X64_ARM64_HELPER_PUSH_GUEST_U64);
-    CHECK(out[17].opcode == DB_X64_ARM64_PLAN_TAIL_HELPER &&
-          out[17].terminal == 1u && out[17].value == UINT64_C(0x2000));
-    CHECK(same(&out[18], &tail, sizeof(tail)) != 0);
+          out[15].host_destination == DB_X64_ARM64_HELPER_ARG1 &&
+          out[15].immediate16 == UINT16_C(0xffe0) && out[15].shift == 0u);
+    CHECK(out[16].opcode == DB_X64_ARM64_PLAN_MOVK_U16 &&
+          out[16].host_destination == DB_X64_ARM64_HELPER_ARG1 &&
+          out[16].immediate16 == UINT16_C(0xffff) && out[16].shift == 16u);
+    CHECK(out[17].opcode == DB_X64_ARM64_PLAN_MOVK_U16 &&
+          out[17].host_destination == DB_X64_ARM64_HELPER_ARG1 &&
+          out[17].shift == 32u);
+    CHECK(out[18].opcode == DB_X64_ARM64_PLAN_MOVK_U16 &&
+          out[18].host_destination == DB_X64_ARM64_HELPER_ARG1 &&
+          out[18].shift == 48u);
+    CHECK(out[19].host_destination == DB_X64_ARM64_HELPER_ARG2 &&
+          out[19].immediate16 == UINT16_C(DB_IR_ADDRESS_BASE_INDEX));
+    CHECK(out[20].host_destination == DB_X64_ARM64_HELPER_ARG3 &&
+          out[20].immediate16 == 0u);
+    CHECK(out[21].host_destination == DB_X64_ARM64_HELPER_ARG4 &&
+          out[21].immediate16 == 1u);
+    CHECK(out[22].host_destination == DB_X64_ARM64_HELPER_ARG5 &&
+          out[22].immediate16 == 4u);
+    CHECK(out[23].helper == DB_X64_ARM64_HELPER_FORM_GUEST_ADDRESS &&
+          out[23].address_mode == DB_IR_ADDRESS_BASE_INDEX &&
+          out[23].displacement == -32);
+
+    CHECK(out[24].helper == DB_X64_ARM64_HELPER_READ_GUEST_U64 &&
+          out[25].opcode == DB_X64_ARM64_PLAN_STORE_STATE_U64);
+    CHECK(out[26].opcode == DB_X64_ARM64_PLAN_MOVZ_U16 &&
+          out[27].helper == DB_X64_ARM64_HELPER_PUSH_GUEST_U64);
+    CHECK(out[28].opcode == DB_X64_ARM64_PLAN_TAIL_HELPER &&
+          out[28].terminal == 1u && out[28].value == UINT64_C(0x2000));
+    CHECK(same(&out[29], &tail, sizeof(tail)) != 0);
     return 1;
 }
 
@@ -151,20 +185,22 @@ static int materialize_sparse_and_zero(void)
 static int helpers_and_pairs(void)
 {
     db_arm64_select_record in[2];
-    db_x64_arm64_plan_record out[4];
+    db_x64_arm64_plan_record out[8];
     db_x64_arm64_plan_summary s;
+
     in[0] = select_record(UINT64_C(0x4000), 0u,
                           DB_ARM64_SELECT_POP_GUEST_U64);
     in[0].temp = DB_ARM64_SELECT_TEMP_TARGET;
     in[1] = select_record(UINT64_C(0x4000), 0u,
                           DB_ARM64_SELECT_BRANCH_GUEST_TARGET);
     in[1].temp = DB_ARM64_SELECT_TEMP_TARGET;
-    CHECK(db_x64_arm64_plan_block(in, 2u, out, 4u, &s) ==
+    CHECK(db_x64_arm64_plan_block(in, 2u, out, 8u, &s) ==
           DB_X64_ARM64_PLAN_OK);
     CHECK(out[0].helper == DB_X64_ARM64_HELPER_POP_GUEST_U64 &&
           out[0].host_destination == DB_X64_ARM64_HOST_TARGET);
     CHECK(out[1].helper == DB_X64_ARM64_HELPER_DISPATCH_TARGET &&
           out[1].terminal == 1u);
+
     in[0] = select_record(UINT64_C(0x4010), 0u,
                           DB_ARM64_SELECT_TEST_GUEST_CONDITION);
     in[0].condition = DB_IR_CONDITION_LESS;
@@ -174,14 +210,20 @@ static int helpers_and_pairs(void)
     in[1].condition = DB_IR_CONDITION_LESS;
     in[1].temp = DB_ARM64_SELECT_TEMP_PREDICATE;
     in[1].value = UINT64_C(0x5000);
-    CHECK(db_x64_arm64_plan_block(in, 2u, out, 4u, &s) ==
+    CHECK(db_x64_arm64_plan_block(in, 2u, out, 8u, &s) ==
           DB_X64_ARM64_PLAN_OK);
-    CHECK(out[0].helper == DB_X64_ARM64_HELPER_TEST_GUEST_CONDITION &&
-          out[1].helper == DB_X64_ARM64_HELPER_DISPATCH_CONDITIONAL);
+    CHECK(s.plan_count == 3u);
+    CHECK(out[0].opcode == DB_X64_ARM64_PLAN_MOVZ_U16 &&
+          out[0].host_destination == DB_X64_ARM64_HELPER_ARG0 &&
+          out[0].immediate16 == UINT16_C(DB_IR_CONDITION_LESS));
+    CHECK(out[1].helper == DB_X64_ARM64_HELPER_TEST_GUEST_CONDITION &&
+          out[1].condition == DB_IR_CONDITION_LESS &&
+          out[2].helper == DB_X64_ARM64_HELPER_DISPATCH_CONDITIONAL);
+
     in[0] = select_record(UINT64_C(0x4020), 0u,
                           DB_ARM64_SELECT_RAISE_TRAP);
     in[0].trap = DB_IR_TRAP_SYSCALL;
-    CHECK(db_x64_arm64_plan_block(in, 1u, out, 4u, &s) ==
+    CHECK(db_x64_arm64_plan_block(in, 1u, out, 8u, &s) ==
           DB_X64_ARM64_PLAN_OK);
     CHECK(out[0].helper == DB_X64_ARM64_HELPER_RAISE_TRAP &&
           out[0].trap == DB_IR_TRAP_SYSCALL);
@@ -196,6 +238,7 @@ static int transactional_failures(void)
     db_x64_arm64_plan_summary s;
     db_x64_arm64_plan_summary sb;
     size_t i;
+
     in[0] = select_record(UINT64_C(0x6000), 0u,
                           DB_ARM64_SELECT_EOR_GUEST_GPR);
     in[0].width = DB_IR_WIDTH_64;
@@ -211,13 +254,14 @@ static int transactional_failures(void)
     CHECK(db_x64_arm64_plan_block(in, 2u, out, 8u, &s) ==
           DB_X64_ARM64_PLAN_BAD_GROUPING);
     CHECK(same(out, before, sizeof(out)) && same(&s, &sb, sizeof(s)));
+
     in[1] = select_record(UINT64_C(0x6000), 0u,
                           DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS);
     in[1].width = DB_IR_WIDTH_64;
     in[1].source_register = 1u;
-    CHECK(db_x64_arm64_plan_block(in, 2u, out, 5u, &s) ==
+    CHECK(db_x64_arm64_plan_block(in, 2u, out, 7u, &s) ==
           DB_X64_ARM64_PLAN_OK);
-    CHECK(db_x64_arm64_plan_block(in, 2u, out, 4u, &s) ==
+    CHECK(db_x64_arm64_plan_block(in, 2u, out, 6u, &s) ==
           DB_X64_ARM64_PLAN_OUTPUT_CAPACITY);
     CHECK(db_x64_arm64_plan_block(in, 2u,
               (db_x64_arm64_plan_record *)(void *)in, 2u, &s) ==
@@ -234,6 +278,9 @@ int main(void)
         UINT64_C(0x8000), 0u, DB_ARM64_SELECT_NOP);
     db_x64_arm64_plan_record out[2];
     db_x64_arm64_plan_summary s;
+
+    CHECK(DB_X64_ARM64_HELPER_ARG0 == 0u);
+    CHECK(DB_X64_ARM64_HELPER_ARG5 == 5u);
     CHECK(mixed_plan());
     CHECK(materialize_sparse_and_zero());
     CHECK(helpers_and_pairs());

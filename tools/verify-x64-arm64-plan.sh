@@ -41,6 +41,24 @@ then
     exit 1
 fi
 
+for token in \
+    DB_X64_ARM64_HELPER_ARG0 \
+    DB_X64_ARM64_HELPER_ARG1 \
+    DB_X64_ARM64_HELPER_ARG2 \
+    DB_X64_ARM64_HELPER_ARG3 \
+    DB_X64_ARM64_HELPER_ARG4 \
+    DB_X64_ARM64_HELPER_ARG5
+do
+    grep -F "$token" include/dblyat/x64_arm64_plan.h >/dev/null || {
+        printf 'X64 ARM64 HELPER ARGUMENT ABI TOKEN MISSING token=%s\n' "$token" >&2
+        exit 1
+    }
+done
+
+grep -F 'DB_X64_ARM64_HELPER_UPDATE_LOGIC_FLAGS' src/x64_arm64_plan_emit.c >/dev/null
+grep -F 'DB_X64_ARM64_HELPER_FORM_GUEST_ADDRESS' src/x64_arm64_plan_emit.c >/dev/null
+grep -F 'DB_X64_ARM64_HELPER_TEST_GUEST_CONDITION' src/x64_arm64_plan_emit.c >/dev/null
+
 gcc $common tests/x64_arm64_plan_test.c $sources \
     -o "$build/gcc-x64-arm64-plan-test"
 "$build/gcc-x64-arm64-plan-test"
@@ -100,6 +118,7 @@ clang --analyze -Iinclude -Isrc -std=c11 \
 
 printf '%s\n' 'X64 ARM64 PLAN VERIFY: PASS'
 printf '%s\n' 'FIXED ARM64 RUNTIME ABI VERIFY: PASS'
+printf '%s\n' 'NONTERMINAL HELPER OPERAND PLAN ABI: PASS'
 printf '%s\n' 'X64 INDIRECT MEMORY CONTROL VERIFY: PASS'
 printf '%s\n' 'RIP RELATIVE IAT CONTROL FLOW VERIFY: PASS'
 printf '%s\n' 'REGISTER INDIRECT CONTROL: NOT IMPLEMENTED'
