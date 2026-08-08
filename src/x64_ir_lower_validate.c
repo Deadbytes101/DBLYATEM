@@ -100,6 +100,7 @@ static bool db_x64_ir_lower_memory_reserved_zero(
     return instruction->reserved[0] == 0u &&
            instruction->reserved[1] == 0u &&
            instruction->reserved[2] == 0u &&
+           instruction->reserved[3] == 0u &&
            instruction->memory.reserved[0] == 0u &&
            instruction->memory.reserved[1] == 0u &&
            instruction->memory.reserved[2] == 0u &&
@@ -291,7 +292,6 @@ static bool db_x64_ir_lower_memory_valid(
                instruction->rex >= UINT8_C(0x48) &&
                instruction->rex <= UINT8_C(0x4f) &&
                instruction->opcode == UINT8_C(0x8b) &&
-               instruction->opcode_extension == 0u &&
                db_x64_ir_lower_register(instruction->register_operand) &&
                memory->register_operand == instruction->register_operand;
 
@@ -300,20 +300,17 @@ static bool db_x64_ir_lower_memory_valid(
                instruction->rex >= UINT8_C(0x48) &&
                instruction->rex <= UINT8_C(0x4f) &&
                instruction->opcode == UINT8_C(0x89) &&
-               instruction->opcode_extension == 0u &&
                db_x64_ir_lower_register(instruction->register_operand) &&
                memory->register_operand == instruction->register_operand;
 
     case DB_X64_MEMORY_INSTRUCTION_CALL_RM64:
         return instruction->opcode == UINT8_C(0xff) &&
-               instruction->opcode_extension == UINT8_C(2) &&
                instruction->register_operand == DB_X64_REGISTER_NONE &&
                memory->register_operand == UINT8_C(2) &&
                (instruction->rex & UINT8_C(0x04)) == 0u;
 
     case DB_X64_MEMORY_INSTRUCTION_JMP_RM64:
         return instruction->opcode == UINT8_C(0xff) &&
-               instruction->opcode_extension == UINT8_C(4) &&
                instruction->register_operand == DB_X64_REGISTER_NONE &&
                memory->register_operand == UINT8_C(4) &&
                (instruction->rex & UINT8_C(0x04)) == 0u;
