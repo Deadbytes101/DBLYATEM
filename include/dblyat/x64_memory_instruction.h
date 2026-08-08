@@ -34,8 +34,7 @@ typedef struct db_x64_memory_instruction {
     uint8_t opcode;
     uint8_t register_operand;
     uint8_t instruction_length;
-    uint8_t opcode_extension;
-    uint8_t reserved[3];
+    uint8_t reserved[4];
 } db_x64_memory_instruction;
 
 db_x64_memory_instruction_status db_x64_memory_instruction_decode_one(
