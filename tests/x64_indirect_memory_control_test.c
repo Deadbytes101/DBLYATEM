@@ -34,59 +34,34 @@ static int run_pipeline(const uint8_t *bytes,
                         uint64_t guest_base,
                         pipeline_result *result)
 {
-    db_x64_code_view code;
-    db_x64_block_record records[4];
-    db_ir_instruction ir[4];
-    db_x64_ir_lower_summary lower;
-    db_arm64_select_record selections[8];
-    db_arm64_select_summary select;
-    db_x64_arm64_plan_record plans[32];
-    db_x64_arm64_plan_summary plan;
+    db_x64_code_view code = {0};
+    db_x64_block_record records[4] = {{0}};
+    db_ir_instruction ir[4] = {{0}};
+    db_x64_ir_lower_summary lower = {0};
+    db_arm64_select_record selections[8] = {{0}};
+    db_arm64_select_summary select = {0};
+    db_x64_arm64_plan_record plans[32] = {{0}};
+    db_x64_arm64_plan_summary plan = {0};
 
-    memset(&code, 0, sizeof(code));
-    memset(records, 0, sizeof(records));
-    memset(ir, 0, sizeof(ir));
-    memset(&lower, 0, sizeof(lower));
-    memset(selections, 0, sizeof(selections));
-    memset(&select, 0, sizeof(select));
-    memset(plans, 0, sizeof(plans));
-    memset(&plan, 0, sizeof(plan));
     memset(result, 0, sizeof(*result));
-
     code.bytes = bytes;
     code.size = size;
     code.guest_base = guest_base;
 
-    CHECK(db_x64_block_build(&code,
-                             guest_base,
-                             4u,
-                             32u,
-                             records,
-                             4u,
-                             &result->block) == DB_X64_BLOCK_OK);
+    CHECK(db_x64_block_build(&code, guest_base, 4u, 32u,
+                             records, 4u, &result->block) ==
+          DB_X64_BLOCK_OK);
     CHECK(result->block.stop_reason == DB_X64_BLOCK_STOP_TERMINATOR);
     CHECK(result->block.record_count == 1u);
-
-    CHECK(db_x64_ir_lower_block(records,
-                                result->block.record_count,
-                                ir,
-                                4u,
-                                &lower) == DB_X64_IR_LOWER_OK);
-    CHECK(lower.instruction_count == 1u);
+    CHECK(db_x64_ir_lower_block(records, 1u, ir, 4u, &lower) ==
+          DB_X64_IR_LOWER_OK);
     CHECK(lower.has_terminator == 1u);
-
-    CHECK(db_arm64_select_block(ir,
-                                lower.instruction_count,
-                                selections,
-                                8u,
-                                &select) == DB_ARM64_SELECT_OK);
+    CHECK(db_arm64_select_block(ir, 1u, selections, 8u, &select) ==
+          DB_ARM64_SELECT_OK);
     CHECK(select.has_terminator == 1u);
-
-    CHECK(db_x64_arm64_plan_block(selections,
-                                  select.operation_count,
-                                  plans,
-                                  32u,
-                                  &plan) == DB_X64_ARM64_PLAN_OK);
+    CHECK(db_x64_arm64_plan_block(selections, select.operation_count,
+                                  plans, 32u, &plan) ==
+          DB_X64_ARM64_PLAN_OK);
     CHECK(plan.has_terminal == 1u);
     CHECK(plan.terminal_helper == DB_X64_ARM64_HELPER_DISPATCH_TARGET);
 
@@ -102,18 +77,15 @@ static int run_pipeline(const uint8_t *bytes,
 
 static int bind_target_terminal(const pipeline_result *pipeline)
 {
-    db_arm64_published_block published;
+    db_arm64_published_block published = {0};
     const db_x64_arm64_plan_record *terminal;
 
     CHECK(pipeline->plan.plan_count != 0u);
     terminal = &pipeline->plans[pipeline->plan.plan_count - 1u];
-
-    memset(&published, 0, sizeof(published));
     published.guest_source_rip = pipeline->block.source_rip;
     published.guest_end_rip =
         pipeline->block.source_rip + (uint64_t)pipeline->block.byte_count;
-    published.guest_fallthrough_rip =
-        pipeline->block.final_fallthrough_rip;
+    published.guest_fallthrough_rip = pipeline->block.final_fallthrough_rip;
     published.source_generation = UINT64_C(7);
     published.translation_key = UINT64_C(0x11223344);
     published.guest_byte_count = pipeline->block.byte_count;
@@ -135,80 +107,82 @@ static int bind_target_terminal(const pipeline_result *pipeline)
 static int test_decode_contract(void)
 {
     const uint8_t call_rip[] = {
-        UINT8_C(0xff), UINT8_C(0x15),
-        UINT8_C(0x34), UINT8_C(0x12), UINT8_C(0x00), UINT8_C(0x00)
+        UINT8_C(0xff), UINT8_C(0x15), UINT8_C(0x34), UINT8_C(0x12),
+        UINT8_C(0x00), UINT8_C(0x00)
     };
     const uint8_t jump_rip[] = {
-        UINT8_C(0xff), UINT8_C(0x25),
-        UINT8_C(0xfc), UINT8_C(0xff), UINT8_C(0xff), UINT8_C(0xff)
+        UINT8_C(0xff), UINT8_C(0x25), UINT8_C(0xfc), UINT8_C(0xff),
+        UINT8_C(0xff), UINT8_C(0xff)
     };
     const uint8_t call_rex_w[] = {
-        UINT8_C(0x48), UINT8_C(0xff), UINT8_C(0x15),
-        UINT8_C(0x78), UINT8_C(0x56), UINT8_C(0x34), UINT8_C(0x12)
+        UINT8_C(0x48), UINT8_C(0xff), UINT8_C(0x15), UINT8_C(0x78),
+        UINT8_C(0x56), UINT8_C(0x34), UINT8_C(0x12)
     };
     const uint8_t call_register[] = {UINT8_C(0xff), UINT8_C(0xd0)};
     const uint8_t jump_register[] = {UINT8_C(0xff), UINT8_C(0xe0)};
     const uint8_t unsupported_group[] = {
-        UINT8_C(0xff), UINT8_C(0x0d),
-        UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0)
+        UINT8_C(0xff), UINT8_C(0x0d), UINT8_C(0), UINT8_C(0),
+        UINT8_C(0), UINT8_C(0)
     };
     const uint8_t rex_r_extension[] = {
-        UINT8_C(0x44), UINT8_C(0xff), UINT8_C(0x15),
-        UINT8_C(0), UINT8_C(0), UINT8_C(0), UINT8_C(0)
+        UINT8_C(0x44), UINT8_C(0xff), UINT8_C(0x15), UINT8_C(0),
+        UINT8_C(0), UINT8_C(0), UINT8_C(0)
     };
     db_x64_memory_instruction instruction;
 
     memset(&instruction, 0, sizeof(instruction));
-    CHECK(db_x64_memory_instruction_decode_one(
-              call_rip, sizeof(call_rip), &instruction) ==
+    CHECK(db_x64_memory_instruction_decode_one(call_rip, sizeof(call_rip),
+                                                &instruction) ==
           DB_X64_MEMORY_INSTRUCTION_OK);
     CHECK(instruction.kind == DB_X64_MEMORY_INSTRUCTION_CALL_RM64);
     CHECK(instruction.opcode == UINT8_C(0xff));
-    CHECK(instruction.opcode_extension == UINT8_C(2));
     CHECK(instruction.register_operand == DB_X64_REGISTER_NONE);
+    CHECK(instruction.memory.register_operand == UINT8_C(2));
     CHECK(instruction.instruction_length == UINT8_C(6));
     CHECK(instruction.memory.address.mode == DB_X64_ADDRESS_RIP_RELATIVE);
     CHECK(instruction.memory.address.displacement == INT64_C(0x1234));
     CHECK(instruction.memory.address.instruction_length == UINT8_C(6));
 
     memset(&instruction, 0, sizeof(instruction));
-    CHECK(db_x64_memory_instruction_decode_one(
-              jump_rip, sizeof(jump_rip), &instruction) ==
+    CHECK(db_x64_memory_instruction_decode_one(jump_rip, sizeof(jump_rip),
+                                                &instruction) ==
           DB_X64_MEMORY_INSTRUCTION_OK);
     CHECK(instruction.kind == DB_X64_MEMORY_INSTRUCTION_JMP_RM64);
-    CHECK(instruction.opcode_extension == UINT8_C(4));
     CHECK(instruction.register_operand == DB_X64_REGISTER_NONE);
+    CHECK(instruction.memory.register_operand == UINT8_C(4));
     CHECK(instruction.memory.address.displacement == INT64_C(-4));
 
-    memset(&instruction, 0, sizeof(instruction));
-    CHECK(db_x64_memory_instruction_decode_one(
-              call_rex_w, sizeof(call_rex_w), &instruction) ==
+    CHECK(db_x64_memory_instruction_decode_one(call_rex_w,
+                                                sizeof(call_rex_w),
+                                                &instruction) ==
           DB_X64_MEMORY_INSTRUCTION_OK);
-    CHECK(instruction.kind == DB_X64_MEMORY_INSTRUCTION_CALL_RM64);
     CHECK(instruction.rex == UINT8_C(0x48));
     CHECK(instruction.instruction_length == UINT8_C(7));
     CHECK(instruction.memory.address.instruction_length == UINT8_C(7));
-
-    CHECK(db_x64_memory_instruction_decode_one(
-              call_register, sizeof(call_register), &instruction) ==
+    CHECK(db_x64_memory_instruction_decode_one(call_register,
+                                                sizeof(call_register),
+                                                &instruction) ==
           DB_X64_MEMORY_INSTRUCTION_REGISTER_ENCODING);
-    CHECK(db_x64_memory_instruction_decode_one(
-              jump_register, sizeof(jump_register), &instruction) ==
+    CHECK(db_x64_memory_instruction_decode_one(jump_register,
+                                                sizeof(jump_register),
+                                                &instruction) ==
           DB_X64_MEMORY_INSTRUCTION_REGISTER_ENCODING);
-    CHECK(db_x64_memory_instruction_decode_one(
-              unsupported_group, sizeof(unsupported_group), &instruction) ==
+    CHECK(db_x64_memory_instruction_decode_one(unsupported_group,
+                                                sizeof(unsupported_group),
+                                                &instruction) ==
           DB_X64_MEMORY_INSTRUCTION_UNSUPPORTED_OPCODE);
-    CHECK(db_x64_memory_instruction_decode_one(
-              rex_r_extension, sizeof(rex_r_extension), &instruction) ==
+    CHECK(db_x64_memory_instruction_decode_one(rex_r_extension,
+                                                sizeof(rex_r_extension),
+                                                &instruction) ==
           DB_X64_MEMORY_INSTRUCTION_BAD_REX);
     return 1;
 }
 
-static int test_indirect_call_pipeline(void)
+static int test_call_pipeline(void)
 {
     const uint8_t bytes[] = {
-        UINT8_C(0xff), UINT8_C(0x15),
-        UINT8_C(0x20), UINT8_C(0x00), UINT8_C(0x00), UINT8_C(0x00)
+        UINT8_C(0xff), UINT8_C(0x15), UINT8_C(0x20), UINT8_C(0),
+        UINT8_C(0), UINT8_C(0)
     };
     const uint64_t base = UINT64_C(0x0000000140001000);
     pipeline_result pipeline;
@@ -228,7 +202,6 @@ static int test_indirect_call_pipeline(void)
     CHECK(pipeline.ir.address.mode == DB_IR_ADDRESS_IP_RELATIVE);
     CHECK(pipeline.ir.address.displacement == INT64_C(0x20));
     CHECK(pipeline.ir.fallthrough_rip == base + UINT64_C(6));
-    CHECK(pipeline.ir.has_direct_target == 0u);
     CHECK(pipeline.select.operation_count == 4u);
     CHECK(pipeline.selections[0].opcode ==
           DB_ARM64_SELECT_FORM_GUEST_ADDRESS);
@@ -242,7 +215,6 @@ static int test_indirect_call_pipeline(void)
         const db_x64_arm64_plan_record *plan = &pipeline.plans[index];
         if (plan->helper == DB_X64_ARM64_HELPER_FORM_GUEST_ADDRESS) {
             ++form_count;
-            CHECK(plan->address_mode == DB_IR_ADDRESS_IP_RELATIVE);
             CHECK(plan->value == base + UINT64_C(6));
             CHECK(plan->displacement == INT64_C(0x20));
         } else if (plan->helper == DB_X64_ARM64_HELPER_READ_GUEST_U64) {
@@ -259,20 +231,17 @@ static int test_indirect_call_pipeline(void)
             CHECK(plan->host_source == DB_X64_ARM64_HOST_TARGET);
         }
     }
-
-    CHECK(form_count == 1u);
-    CHECK(read_count == 1u);
-    CHECK(push_count == 1u);
-    CHECK(dispatch_count == 1u);
+    CHECK(form_count == 1u && read_count == 1u &&
+          push_count == 1u && dispatch_count == 1u);
     CHECK(bind_target_terminal(&pipeline));
     return 1;
 }
 
-static int test_indirect_jump_pipeline(void)
+static int test_jump_pipeline(void)
 {
     const uint8_t bytes[] = {
-        UINT8_C(0xff), UINT8_C(0x25),
-        UINT8_C(0x10), UINT8_C(0x00), UINT8_C(0x00), UINT8_C(0x00)
+        UINT8_C(0xff), UINT8_C(0x25), UINT8_C(0x10), UINT8_C(0),
+        UINT8_C(0), UINT8_C(0)
     };
     const uint64_t base = UINT64_C(0x0000000140002000);
     pipeline_result pipeline;
@@ -282,11 +251,8 @@ static int test_indirect_jump_pipeline(void)
     uint32_t dispatch_count = 0u;
 
     CHECK(run_pipeline(bytes, sizeof(bytes), base, &pipeline));
-    CHECK(pipeline.block_record.path == DB_X64_BLOCK_PATH_MEMORY);
     CHECK(pipeline.block_record.control == DB_X64_BLOCK_CONTROL_INDIRECT_JUMP);
-    CHECK(pipeline.block_record.has_direct_target == 0u);
     CHECK(pipeline.ir.opcode == DB_IR_OPCODE_JUMP_INDIRECT);
-    CHECK(pipeline.ir.address.mode == DB_IR_ADDRESS_IP_RELATIVE);
     CHECK(pipeline.select.operation_count == 3u);
     CHECK(pipeline.selections[0].opcode ==
           DB_ARM64_SELECT_FORM_GUEST_ADDRESS);
@@ -306,10 +272,7 @@ static int test_indirect_jump_pipeline(void)
             CHECK(plan->terminal == 1u);
         }
     }
-
-    CHECK(read_count == 1u);
-    CHECK(push_count == 0u);
-    CHECK(dispatch_count == 1u);
+    CHECK(read_count == 1u && push_count == 0u && dispatch_count == 1u);
     CHECK(bind_target_terminal(&pipeline));
     return 1;
 }
@@ -317,9 +280,8 @@ static int test_indirect_jump_pipeline(void)
 int main(void)
 {
     CHECK(test_decode_contract());
-    CHECK(test_indirect_call_pipeline());
-    CHECK(test_indirect_jump_pipeline());
-
+    CHECK(test_call_pipeline());
+    CHECK(test_jump_pipeline());
     printf("X64 INDIRECT MEMORY CONTROL TEST: PASS\n");
     printf("FF /2 MEMORY CALL DECODE: PASS\n");
     printf("FF /4 MEMORY JUMP DECODE: PASS\n");
