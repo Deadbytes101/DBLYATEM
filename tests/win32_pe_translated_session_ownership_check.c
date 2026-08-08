@@ -113,7 +113,7 @@ static db_win32_translated_execution_status never_execute(
     return DB_WIN32_TRANSLATED_EXECUTION_NULL_ARGUMENT;
 }
 
-static void init_fixture(ownership_fixture *fixture)
+static int init_fixture(ownership_fixture *fixture)
 {
     db_win32_pe_translated_session *session;
 
@@ -147,12 +147,14 @@ static void init_fixture(ownership_fixture *fixture)
     fixture->platform.sync_icache = fake_sync;
     fixture->platform.unmap = fake_unmap;
 
-    CHECK(db_arm64_translation_store_init(
-              &session->store,
-              fixture->slots,
-              fixture->handles,
-              fixture->owned,
-              STORE_CAPACITY) == DB_ARM64_TRANSLATION_STORE_OK);
+    if (db_arm64_translation_store_init(
+            &session->store,
+            fixture->slots,
+            fixture->handles,
+            fixture->owned,
+            STORE_CAPACITY) != DB_ARM64_TRANSLATION_STORE_OK) {
+        return 0;
+    }
 
     session->wx_platform = &fixture->platform;
     session->code.bytes = fixture->image;
@@ -186,6 +188,7 @@ static void init_fixture(ownership_fixture *fixture)
     session->scalar.rflags = DB_X64_RFLAGS_FIXED_ONE;
     session->state = (uint32_t)DB_WIN32_PE_TRANSLATED_SESSION_READY;
     session->format_version = DB_WIN32_PE_TRANSLATED_SESSION_FORMAT_VERSION;
+    return 1;
 }
 
 static int test_run_output_alias_rejected(void)
@@ -193,7 +196,7 @@ static int test_run_output_alias_rejected(void)
     ownership_fixture fixture;
     db_win32_pe_translated_session_run_summary *aliased;
 
-    init_fixture(&fixture);
+    CHECK(init_fixture(&fixture));
     aliased = (db_win32_pe_translated_session_run_summary *)(void *)
         fixture.guest_stack;
 
@@ -216,7 +219,7 @@ static int test_copied_session_dispose_rejected(void)
     ownership_fixture fixture;
     db_win32_pe_translated_session copied;
 
-    init_fixture(&fixture);
+    CHECK(init_fixture(&fixture));
     copied = fixture.session;
 
     CHECK(db_win32_pe_translated_session_dispose(&copied) ==
