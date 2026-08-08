@@ -69,6 +69,30 @@ static uint32_t chunks(uint64_t value)
     return count == 0u ? 1u : count;
 }
 
+static uint32_t helper_argument_expansion(
+    const db_arm64_select_record *record)
+{
+    switch (record->opcode) {
+    case DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS:
+        return chunks((uint64_t)(uint32_t)record->width) +
+               chunks((uint64_t)record->source_register);
+
+    case DB_ARM64_SELECT_FORM_GUEST_ADDRESS:
+        return chunks(record->value) +
+               chunks((uint64_t)record->displacement) +
+               chunks((uint64_t)(uint32_t)record->address_mode) +
+               chunks((uint64_t)record->base_register) +
+               chunks((uint64_t)record->index_register) +
+               chunks((uint64_t)record->scale);
+
+    case DB_ARM64_SELECT_TEST_GUEST_CONDITION:
+        return chunks((uint64_t)(uint32_t)record->condition);
+
+    default:
+        return 0u;
+    }
+}
+
 uint32_t db_x64_arm64_plan_expansion_internal(
     const db_arm64_select_record *record)
 {
@@ -77,8 +101,10 @@ uint32_t db_x64_arm64_plan_expansion_internal(
     case DB_ARM64_SELECT_MATERIALIZE_U64: return chunks(record->value) + 1u;
     case DB_ARM64_SELECT_MOVE_GUEST_GPR: return 2u;
     case DB_ARM64_SELECT_EOR_GUEST_GPR: return 4u;
-    case DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS: return 1u;
-    case DB_ARM64_SELECT_FORM_GUEST_ADDRESS: return 1u;
+    case DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS:
+    case DB_ARM64_SELECT_FORM_GUEST_ADDRESS:
+    case DB_ARM64_SELECT_TEST_GUEST_CONDITION:
+        return helper_argument_expansion(record) + 1u;
     case DB_ARM64_SELECT_LOAD_U64: return 2u;
     case DB_ARM64_SELECT_LOAD_U64_TARGET: return 1u;
     case DB_ARM64_SELECT_STORE_U64: return 2u;
@@ -86,7 +112,6 @@ uint32_t db_x64_arm64_plan_expansion_internal(
     case DB_ARM64_SELECT_POP_GUEST_U64:
     case DB_ARM64_SELECT_BRANCH_GUEST_DIRECT:
     case DB_ARM64_SELECT_BRANCH_GUEST_TARGET:
-    case DB_ARM64_SELECT_TEST_GUEST_CONDITION:
     case DB_ARM64_SELECT_BRANCH_IF_TRUE:
     case DB_ARM64_SELECT_RAISE_TRAP:
         return 1u;
