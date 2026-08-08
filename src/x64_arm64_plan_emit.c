@@ -150,14 +150,54 @@ void db_x64_arm64_plan_emit_internal(
         return;
 
     case DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS:
+        cursor = materialize(selection,
+                             source_select_index,
+                             (uint64_t)(uint32_t)selection->width,
+                             DB_X64_ARM64_HELPER_ARG0,
+                             records);
+        cursor += materialize(selection,
+                              source_select_index,
+                              (uint64_t)selection->source_register,
+                              DB_X64_ARM64_HELPER_ARG1,
+                              &records[cursor]);
         record = helper_record(selection, source_select_index,
                                DB_X64_ARM64_HELPER_UPDATE_LOGIC_FLAGS, false);
         record.width = selection->width;
         record.guest_register = selection->source_register;
-        records[0] = record;
+        records[cursor] = record;
         return;
 
     case DB_ARM64_SELECT_FORM_GUEST_ADDRESS:
+        cursor = materialize(selection,
+                             source_select_index,
+                             selection->value,
+                             DB_X64_ARM64_HELPER_ARG0,
+                             records);
+        cursor += materialize(selection,
+                              source_select_index,
+                              (uint64_t)selection->displacement,
+                              DB_X64_ARM64_HELPER_ARG1,
+                              &records[cursor]);
+        cursor += materialize(selection,
+                              source_select_index,
+                              (uint64_t)(uint32_t)selection->address_mode,
+                              DB_X64_ARM64_HELPER_ARG2,
+                              &records[cursor]);
+        cursor += materialize(selection,
+                              source_select_index,
+                              (uint64_t)selection->base_register,
+                              DB_X64_ARM64_HELPER_ARG3,
+                              &records[cursor]);
+        cursor += materialize(selection,
+                              source_select_index,
+                              (uint64_t)selection->index_register,
+                              DB_X64_ARM64_HELPER_ARG4,
+                              &records[cursor]);
+        cursor += materialize(selection,
+                              source_select_index,
+                              (uint64_t)selection->scale,
+                              DB_X64_ARM64_HELPER_ARG5,
+                              &records[cursor]);
         record = helper_record(selection, source_select_index,
                                DB_X64_ARM64_HELPER_FORM_GUEST_ADDRESS, false);
         record.value = selection->value;
@@ -167,7 +207,7 @@ void db_x64_arm64_plan_emit_internal(
         record.index_guest_register = selection->index_register;
         record.scale = selection->scale;
         record.host_destination = DB_X64_ARM64_HOST_PRIMARY;
-        records[0] = record;
+        records[cursor] = record;
         return;
 
     case DB_ARM64_SELECT_LOAD_U64:
@@ -231,11 +271,16 @@ void db_x64_arm64_plan_emit_internal(
         return;
 
     case DB_ARM64_SELECT_TEST_GUEST_CONDITION:
+        cursor = materialize(selection,
+                             source_select_index,
+                             (uint64_t)(uint32_t)selection->condition,
+                             DB_X64_ARM64_HELPER_ARG0,
+                             records);
         record = helper_record(selection, source_select_index,
                                DB_X64_ARM64_HELPER_TEST_GUEST_CONDITION, false);
         record.condition = selection->condition;
         record.host_destination = DB_X64_ARM64_HOST_TARGET;
-        records[0] = record;
+        records[cursor] = record;
         return;
 
     case DB_ARM64_SELECT_BRANCH_IF_TRUE:
