@@ -214,22 +214,59 @@ static db_win32_translated_execution_status db_execution_validate_aliases(
     return DB_WIN32_TRANSLATED_EXECUTION_OK;
 }
 
+static bool db_execution_guest_memory_region_aliases_output(
+    const db_linux_arm64_guest_memory *guest_memory,
+    const void *output,
+    size_t output_size)
+{
+    const void *image;
+    const void *page_plan;
+    const void *stack;
+    const void *gateway;
+
+    if (guest_memory == NULL) {
+        return false;
+    }
+
+    image = (const void *)(uintptr_t)guest_memory->image_host_address;
+    page_plan =
+        (const void *)(uintptr_t)guest_memory->image_page_plan_address;
+    stack = (const void *)(uintptr_t)guest_memory->stack_host_address;
+    gateway = (const void *)(uintptr_t)guest_memory->gateway_host_address;
+
+    return db_execution_overlap(output, output_size,
+                                guest_memory, sizeof(*guest_memory)) ||
+           db_execution_overlap(output, output_size,
+                                image, (size_t)guest_memory->image_size) ||
+           db_execution_overlap(output, output_size,
+                                page_plan,
+                                (size_t)guest_memory->image_page_count) ||
+           db_execution_overlap(output, output_size,
+                                stack, (size_t)guest_memory->stack_size) ||
+           (guest_memory->gateway_size != 0u &&
+            db_execution_overlap(output, output_size,
+                                 gateway,
+                                 (size_t)guest_memory->gateway_size));
+}
+
 static bool db_execution_guest_memory_aliases_output(
     const db_linux_arm64_guest_memory *guest_memory,
     db_win32_kernel32_state *kernel32_state,
     db_x64_scalar_state *scalar_state,
     db_win32_translated_execution_summary *summary)
 {
-    if (guest_memory == NULL) {
-        return false;
-    }
-
-    return db_execution_overlap(guest_memory, sizeof(*guest_memory),
-                                kernel32_state, sizeof(*kernel32_state)) ||
-           db_execution_overlap(guest_memory, sizeof(*guest_memory),
-                                scalar_state, sizeof(*scalar_state)) ||
-           db_execution_overlap(guest_memory, sizeof(*guest_memory),
-                                summary, sizeof(*summary));
+    return db_execution_guest_memory_region_aliases_output(
+               guest_memory,
+               kernel32_state,
+               sizeof(*kernel32_state)) ||
+           db_execution_guest_memory_region_aliases_output(
+               guest_memory,
+               scalar_state,
+               sizeof(*scalar_state)) ||
+           db_execution_guest_memory_region_aliases_output(
+               guest_memory,
+               summary,
+               sizeof(*summary));
 }
 
 static void db_execution_finish_common(
