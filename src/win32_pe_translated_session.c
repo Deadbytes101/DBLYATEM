@@ -198,26 +198,46 @@ static bool db_session_empty_valid(
     return memcmp(session, &expected, sizeof(expected)) == 0;
 }
 
+static bool db_session_owned_shape_valid(
+    const db_win32_pe_translated_session *session)
+{
+    if (session == NULL ||
+        session->format_version !=
+            DB_WIN32_PE_TRANSLATED_SESSION_FORMAT_VERSION ||
+        !db_session_zero_bytes(session->reserved,
+                               sizeof(session->reserved)) ||
+        !db_session_platform_valid(session->wx_platform) ||
+        session->translation.code != &session->code ||
+        session->translation.helper_targets != &session->helper_targets ||
+        session->translation.wx_platform != session->wx_platform ||
+        session->demand.store != &session->store ||
+        session->demand.translation != &session->translation ||
+        !db_session_translation_workspace_valid(session->demand.workspace) ||
+        session->demand.format_version !=
+            DB_WIN32_TRANSLATED_DEMAND_RUN_FORMAT_VERSION) {
+        return false;
+    }
+
+    switch ((db_win32_pe_translated_session_state)session->state) {
+    case DB_WIN32_PE_TRANSLATED_SESSION_READY:
+    case DB_WIN32_PE_TRANSLATED_SESSION_TERMINATED:
+        return session->store.state ==
+               (uint32_t)DB_ARM64_TRANSLATION_STORE_READY;
+    case DB_WIN32_PE_TRANSLATED_SESSION_CLEANUP_REQUIRED:
+        return session->store.state ==
+               (uint32_t)DB_ARM64_TRANSLATION_STORE_POISONED;
+    case DB_WIN32_PE_TRANSLATED_SESSION_EMPTY:
+    default:
+        return false;
+    }
+}
+
 static bool db_session_run_shape_valid(
     const db_win32_pe_translated_session *session)
 {
-    return session != NULL &&
+    return db_session_owned_shape_valid(session) &&
            session->state ==
                (uint32_t)DB_WIN32_PE_TRANSLATED_SESSION_READY &&
-           session->format_version ==
-               DB_WIN32_PE_TRANSLATED_SESSION_FORMAT_VERSION &&
-           db_session_zero_bytes(session->reserved,
-                                 sizeof(session->reserved)) &&
-           session->wx_platform != NULL &&
-           session->store.state ==
-               (uint32_t)DB_ARM64_TRANSLATION_STORE_READY &&
-           session->translation.code == &session->code &&
-           session->translation.helper_targets == &session->helper_targets &&
-           session->demand.store == &session->store &&
-           session->demand.translation == &session->translation &&
-           session->demand.workspace != NULL &&
-           session->demand.format_version ==
-               DB_WIN32_TRANSLATED_DEMAND_RUN_FORMAT_VERSION &&
            session->kernel32.process_id != 0u &&
            session->kernel32.thread_id != 0u &&
            session->kernel32.reserved == 0u;
@@ -303,6 +323,81 @@ static db_win32_pe_translated_session_status db_session_validate_aliases(
 
 #undef DB_SESSION_CHECK_ARRAY
 #undef DB_SESSION_CHECK
+    return DB_WIN32_PE_TRANSLATED_SESSION_OK;
+}
+
+static db_win32_pe_translated_session_status
+ db_session_run_output_disjoint(
+    const db_win32_pe_translated_session *session,
+    const db_win32_pe_translated_session_run_summary *summary)
+{
+    const db_arm64_translation_workspace *tw = session->demand.workspace;
+    size_t bytes;
+    size_t index;
+
+#define DB_SESSION_RUN_OUTPUT(pointer_value, size_value)                     \
+    do {                                                                     \
+        if ((pointer_value) != NULL && (size_value) != 0u &&                 \
+            db_session_overlap(summary, sizeof(*summary),                    \
+                               (pointer_value), (size_value))) {              \
+            return DB_WIN32_PE_TRANSLATED_SESSION_BUFFER_OVERLAP;            \
+        }                                                                    \
+    } while (0)
+#define DB_SESSION_RUN_ARRAY(pointer_value, count_value)                      \
+    do {                                                                     \
+        if (!db_session_multiply((count_value),                              \
+                                 sizeof(*(pointer_value)), &bytes)) {         \
+            return DB_WIN32_PE_TRANSLATED_SESSION_COUNT_OVERFLOW;            \
+        }                                                                    \
+        DB_SESSION_RUN_OUTPUT((pointer_value), bytes);                        \
+    } while (0)
+
+    DB_SESSION_RUN_OUTPUT(session, sizeof(*session));
+    DB_SESSION_RUN_OUTPUT(tw, sizeof(*tw));
+    DB_SESSION_RUN_OUTPUT(session->wx_platform,
+                          sizeof(*session->wx_platform));
+    DB_SESSION_RUN_ARRAY(session->store.cache.slots,
+                         session->store.capacity);
+    DB_SESSION_RUN_ARRAY(session->store.handles,
+                         session->store.capacity);
+    DB_SESSION_RUN_OUTPUT(session->store.owned, session->store.capacity);
+
+    DB_SESSION_RUN_ARRAY(tw->block_records, tw->block_record_capacity);
+    DB_SESSION_RUN_ARRAY(tw->ir, tw->ir_capacity);
+    DB_SESSION_RUN_ARRAY(tw->selections, tw->selection_capacity);
+    DB_SESSION_RUN_ARRAY(tw->plans, tw->plan_capacity);
+    DB_SESSION_RUN_ARRAY(tw->source_words, tw->source_word_capacity);
+    DB_SESSION_RUN_ARRAY(tw->relocations, tw->relocation_capacity);
+    DB_SESSION_RUN_ARRAY(tw->output_words, tw->output_word_capacity);
+    DB_SESSION_RUN_ARRAY(tw->resolutions, tw->resolution_capacity);
+    DB_SESSION_RUN_OUTPUT(tw->image_bytes, tw->image_capacity);
+
+    DB_SESSION_RUN_OUTPUT(session->demand.image_memory,
+                          session->code.size);
+    DB_SESSION_RUN_ARRAY(session->demand.image_page_plan,
+                         session->demand.image_page_count);
+    DB_SESSION_RUN_OUTPUT(session->demand.gateway_buffer,
+                          session->demand.gateway_buffer_size);
+    DB_SESSION_RUN_ARRAY(session->demand.targets,
+                         session->demand.target_count);
+    DB_SESSION_RUN_ARRAY(session->demand.handlers,
+                         session->demand.handler_count);
+    DB_SESSION_RUN_ARRAY(session->demand.signatures,
+                         session->demand.signature_count);
+    DB_SESSION_RUN_OUTPUT(session->demand.guest_stack,
+                          session->demand.guest_stack_size);
+
+    for (index = 0u; index < session->store.capacity; ++index) {
+        if (session->store.owned[index] != 0u) {
+            DB_SESSION_RUN_OUTPUT(session->store.handles[index].mapping,
+                                  session->store.handles[index].allocation_size);
+        }
+    }
+    DB_SESSION_RUN_OUTPUT(session->store.rollback_handle.mapping,
+                          session->store.rollback_handle.allocation_size);
+
+#undef DB_SESSION_RUN_ARRAY
+#undef DB_SESSION_RUN_OUTPUT
     return DB_WIN32_PE_TRANSLATED_SESSION_OK;
 }
 
@@ -560,15 +655,12 @@ static db_win32_pe_translated_session_status db_session_run_core(
     db_win32_translated_demand_run_summary demand_summary;
     db_win32_pe_translated_session_run_summary completed;
     db_win32_translated_demand_run_status demand_status;
+    db_win32_pe_translated_session_status alias_status;
     uint64_t source_rip;
     uint32_t state_before;
 
     if (session == NULL || summary == NULL) {
         return DB_WIN32_PE_TRANSLATED_SESSION_NULL_ARGUMENT;
-    }
-    if (db_session_overlap(session, sizeof(*session),
-                           summary, sizeof(*summary))) {
-        return DB_WIN32_PE_TRANSLATED_SESSION_BUFFER_OVERLAP;
     }
     if (session->state ==
         (uint32_t)DB_WIN32_PE_TRANSLATED_SESSION_TERMINATED) {
@@ -576,6 +668,10 @@ static db_win32_pe_translated_session_status db_session_run_core(
     }
     if (!db_session_run_shape_valid(session)) {
         return DB_WIN32_PE_TRANSLATED_SESSION_BAD_SESSION;
+    }
+    alias_status = db_session_run_output_disjoint(session, summary);
+    if (alias_status != DB_WIN32_PE_TRANSLATED_SESSION_OK) {
+        return alias_status;
     }
     if (session->run_count == UINT32_MAX) {
         return DB_WIN32_PE_TRANSLATED_SESSION_COUNT_OVERFLOW;
@@ -676,13 +772,7 @@ db_win32_pe_translated_session_status
     if (session == NULL) {
         return DB_WIN32_PE_TRANSLATED_SESSION_NULL_ARGUMENT;
     }
-    if (session->format_version !=
-            DB_WIN32_PE_TRANSLATED_SESSION_FORMAT_VERSION ||
-        db_session_zero_bytes(session->reserved,
-                              sizeof(session->reserved)) == false ||
-        session->state ==
-            (uint32_t)DB_WIN32_PE_TRANSLATED_SESSION_EMPTY ||
-        session->wx_platform == NULL) {
+    if (!db_session_owned_shape_valid(session)) {
         return DB_WIN32_PE_TRANSLATED_SESSION_BAD_SESSION;
     }
 
