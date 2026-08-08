@@ -27,7 +27,8 @@ typedef enum db_win32_translated_execution_status {
     DB_WIN32_TRANSLATED_EXECUTION_BAD_TERMINAL_EXIT,
     DB_WIN32_TRANSLATED_EXECUTION_ENTRY_FAILED,
     DB_WIN32_TRANSLATED_EXECUTION_GATEWAY_FAILED,
-    DB_WIN32_TRANSLATED_EXECUTION_BAD_GATEWAY_OUTCOME
+    DB_WIN32_TRANSLATED_EXECUTION_BAD_GATEWAY_OUTCOME,
+    DB_WIN32_TRANSLATED_EXECUTION_BAD_GUEST_MEMORY
 } db_win32_translated_execution_status;
 
 typedef struct db_win32_translated_execution_summary {
@@ -48,6 +49,27 @@ typedef struct db_win32_translated_execution_summary {
 db_win32_translated_execution_status
  db_win32_translated_execution_resolve_exit(
     const db_translated_terminal_exit *observed_exit,
+    const void *gateway_buffer,
+    size_t gateway_buffer_size,
+    const db_iat_target *targets,
+    size_t target_count,
+    uint64_t gateway_base,
+    uint64_t slot_size,
+    const db_gateway_dispatch_handler *handlers,
+    size_t handler_count,
+    const db_gateway_frame_signature *signatures,
+    size_t signature_count,
+    const void *guest_stack,
+    size_t guest_stack_size,
+    uint64_t guest_stack_base,
+    db_win32_kernel32_state *kernel32_state,
+    db_x64_scalar_state *scalar_state,
+    db_win32_translated_execution_summary *summary);
+
+db_win32_translated_execution_status
+ db_win32_translated_execution_step_with_guest_memory(
+    const db_arm64_published_block *published,
+    const db_linux_arm64_guest_memory *guest_memory,
     const void *gateway_buffer,
     size_t gateway_buffer_size,
     const db_iat_target *targets,
