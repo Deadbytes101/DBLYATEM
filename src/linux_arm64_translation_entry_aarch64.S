@@ -31,15 +31,19 @@
 .global db_linux_arm64_translation_enter_asm
 .type db_linux_arm64_translation_enter_asm, %function
 db_linux_arm64_translation_enter_asm:
-    stp x29, x30, [sp, #-32]!
+    stp x29, x30, [sp, #-48]!
     stp x19, x20, [sp, #16]
+    str x21, [sp, #32]
     mov x29, sp
     mov x16, x0
     mov x19, x1
     mov x20, x2
+    adr x21, .Ldb_linux_arm64_translation_block_return
     blr x16
+.Ldb_linux_arm64_translation_block_return:
+    ldr x21, [sp, #32]
     ldp x19, x20, [sp, #16]
-    ldp x29, x30, [sp], #32
+    ldp x29, x30, [sp], #48
     ret
 .size db_linux_arm64_translation_enter_asm, .-db_linux_arm64_translation_enter_asm
 
@@ -51,7 +55,7 @@ db_linux_arm64_translation_return_helper:
     mov w9, #1
     str w9, [x20, #112]
     db_increment_terminal_count
-    ret
+    br x21
 .size db_linux_arm64_translation_return_helper, .-db_linux_arm64_translation_return_helper
 
 .align 2
@@ -65,7 +69,7 @@ db_linux_arm64_translation_target_helper:
     mov w9, #1
     strb w9, [x20, #128]
     db_increment_terminal_count
-    ret
+    br x21
 .size db_linux_arm64_translation_target_helper, .-db_linux_arm64_translation_target_helper
 
 .align 2
@@ -89,7 +93,7 @@ db_linux_arm64_translation_conditional_helper:
     strb w15, [x20, #130]
     strb w9, [x20, #131]
     db_increment_terminal_count
-    ret
+    br x21
 .size db_linux_arm64_translation_conditional_helper, .-db_linux_arm64_translation_conditional_helper
 
 .align 2
@@ -100,7 +104,7 @@ db_linux_arm64_translation_trap_helper:
     mov w9, #4
     str w9, [x20, #112]
     db_increment_terminal_count
-    ret
+    br x21
 .size db_linux_arm64_translation_trap_helper, .-db_linux_arm64_translation_trap_helper
 
 .align 2
