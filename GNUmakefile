@@ -248,3 +248,29 @@ $(BUILD)/dblyatem: src/win32_provider.c \
                    include/dblyat/win32_kernel32_invoke.h \
                    include/dblyat/win32_kernel32_gateway.h \
                    include/dblyat/win32_runtime_dispatch.h
+
+CORE += src/win32_translated_gateway_bridge.c \
+        src/win32_translated_execution.c \
+        src/translated_terminal_exit.c \
+        src/linux_arm64_translation_entry.c
+HEADERS += include/dblyat/win32_translated_gateway_bridge.h \
+           include/dblyat/win32_translated_execution.h \
+           include/dblyat/translated_terminal_exit.h \
+           include/dblyat/linux_arm64_translation_entry.h \
+           include/dblyat/arm64_published_block.h
+
+HOST_MACHINE := $(shell uname -m)
+ifneq ($(filter aarch64 arm64,$(HOST_MACHINE)),)
+CORE += src/linux_arm64_translation_entry_aarch64.S
+$(BUILD)/dblyatem: src/linux_arm64_translation_entry_aarch64.S
+endif
+
+$(BUILD)/dblyatem: src/win32_translated_gateway_bridge.c \
+                   src/win32_translated_execution.c \
+                   src/translated_terminal_exit.c \
+                   src/linux_arm64_translation_entry.c \
+                   include/dblyat/win32_translated_gateway_bridge.h \
+                   include/dblyat/win32_translated_execution.h \
+                   include/dblyat/translated_terminal_exit.h \
+                   include/dblyat/linux_arm64_translation_entry.h \
+                   include/dblyat/arm64_published_block.h
