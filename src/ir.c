@@ -12,8 +12,10 @@ const char *db_ir_opcode_name(db_ir_opcode opcode)
         "load u64",
         "store u64",
         "call direct",
+        "call indirect",
         "return",
         "jump direct",
+        "jump indirect",
         "jump conditional",
         "trap"
     };
