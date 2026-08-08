@@ -274,3 +274,14 @@ $(BUILD)/dblyatem: src/win32_translated_gateway_bridge.c \
                    include/dblyat/translated_terminal_exit.h \
                    include/dblyat/linux_arm64_translation_entry.h \
                    include/dblyat/arm64_published_block.h
+
+CORE += src/arm64_block_cache.c \
+        src/win32_translated_run.c
+HEADERS += include/dblyat/arm64_block_cache.h \
+           include/dblyat/win32_translated_run.h
+
+$(BUILD)/dblyatem: src/arm64_block_cache.c \
+                   src/win32_translated_run.c \
+                   src/win32_translated_run_internal.h \
+                   include/dblyat/arm64_block_cache.h \
+                   include/dblyat/win32_translated_run.h
