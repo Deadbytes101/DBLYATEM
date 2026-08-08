@@ -79,7 +79,8 @@ static bool db_win32_pe_startup_stack_valid(
     if (config->guest_stack_size == 0u ||
         !db_win32_pe_startup_canonical(config->guest_stack_base) ||
         !db_win32_pe_startup_canonical(config->initial_rsp) ||
-        UINT64_MAX - config->guest_stack_base < config->guest_stack_size) {
+        UINT64_MAX - config->guest_stack_base <
+            (uint64_t)config->guest_stack_size) {
         return false;
     }
 
@@ -91,6 +92,30 @@ static bool db_win32_pe_startup_stack_valid(
     return config->initial_rsp >= config->guest_stack_base &&
            config->initial_rsp <= end &&
            (config->initial_rsp & UINT64_C(7)) == 0u;
+}
+
+static bool db_win32_pe_startup_page_count(uint32_t image_size,
+                                           size_t page_size,
+                                           size_t *page_count)
+{
+    const size_t bytes = (size_t)image_size;
+    size_t count;
+
+    if (page_size == 0u || bytes == 0u) {
+        return false;
+    }
+    count = bytes / page_size;
+    if (bytes % page_size != 0u) {
+        if (count == SIZE_MAX) {
+            return false;
+        }
+        ++count;
+    }
+    if (count == 0u) {
+        return false;
+    }
+    *page_count = count;
+    return true;
 }
 
 static bool db_win32_pe_startup_add_region(
@@ -333,11 +358,9 @@ db_win32_pe_startup_status db_win32_pe_startup_prepare(
         return DB_WIN32_PE_STARTUP_PE_FAILED;
     }
 
-    required_pages =
-        ((size_t)completed.pe.image_size + config->page_size - 1u) /
-        config->page_size;
-    if (config->page_size > SIZE_MAX -
-            ((size_t)completed.pe.image_size % config->page_size) ||
+    if (!db_win32_pe_startup_page_count(completed.pe.image_size,
+                                        config->page_size,
+                                        &required_pages) ||
         completed.pe.image_size > config->image_size ||
         completed.pe.image_size > workspace->staging_image_size ||
         required_pages > config->page_capacity ||
