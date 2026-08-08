@@ -187,7 +187,7 @@ static int condition_abi(void)
 
 static int stale_setup_rejected_transactionally(void)
 {
-    db_arm64_select_record input[2];
+    db_arm64_select_record input[3];
     db_x64_arm64_plan_record plans[16];
     db_x64_arm64_plan_summary plan;
     uint32_t words[16];
@@ -209,8 +209,11 @@ static int stale_setup_rejected_transactionally(void)
                          DB_ARM64_SELECT_LOAD_U64_TARGET);
     input[1].width = DB_IR_WIDTH_64;
     input[1].temp = DB_ARM64_SELECT_TEMP_ADDRESS;
+    input[2] = selection(UINT64_C(0x5000), 0u,
+                         DB_ARM64_SELECT_BRANCH_GUEST_TARGET);
+    input[2].temp = DB_ARM64_SELECT_TEMP_TARGET;
 
-    CHECK(db_x64_arm64_plan_block(input, 2u, plans, 16u, &plan) ==
+    CHECK(db_x64_arm64_plan_block(input, 3u, plans, 16u, &plan) ==
           DB_X64_ARM64_PLAN_OK);
     plans[5].immediate16 = UINT16_C(DB_IR_ADDRESS_IP_RELATIVE);
     memset(words, 0xa5, sizeof(words));
