@@ -73,6 +73,18 @@ static db_ir_address_mode db_x64_ir_lower_address_mode(
     return DB_IR_ADDRESS_NONE;
 }
 
+static void db_x64_ir_lower_copy_memory_address(
+    const db_x64_memory_instruction *memory,
+    db_ir_instruction *instruction)
+{
+    instruction->address.displacement = memory->memory.address.displacement;
+    instruction->address.mode = db_x64_ir_lower_address_mode(
+        memory->memory.address.mode);
+    instruction->address.base_register = memory->memory.address.base_register;
+    instruction->address.index_register = memory->memory.address.index_register;
+    instruction->address.scale = memory->memory.address.scale;
+}
+
 db_x64_ir_lower_status db_x64_ir_lower_emit_record_internal(
     const db_x64_block_record *record,
     db_ir_instruction *instruction)
@@ -80,27 +92,31 @@ db_x64_ir_lower_status db_x64_ir_lower_emit_record_internal(
     db_x64_ir_lower_initial_instruction(instruction, record);
 
     if (record->path == DB_X64_BLOCK_PATH_MEMORY) {
-        instruction->opcode =
-            record->memory.kind == DB_X64_MEMORY_INSTRUCTION_LOAD_R64
-                ? DB_IR_OPCODE_LOAD_U64
-                : DB_IR_OPCODE_STORE_U64;
-        instruction->width = DB_IR_WIDTH_64;
-        instruction->address.displacement =
-            record->memory.memory.address.displacement;
-        instruction->address.mode = db_x64_ir_lower_address_mode(
-            record->memory.memory.address.mode);
-        instruction->address.base_register =
-            record->memory.memory.address.base_register;
-        instruction->address.index_register =
-            record->memory.memory.address.index_register;
-        instruction->address.scale = record->memory.memory.address.scale;
-        if (record->memory.kind == DB_X64_MEMORY_INSTRUCTION_LOAD_R64) {
-            instruction->destination_register =
-                record->memory.register_operand;
-        } else {
+        db_x64_ir_lower_copy_memory_address(&record->memory, instruction);
+
+        switch (record->memory.kind) {
+        case DB_X64_MEMORY_INSTRUCTION_LOAD_R64:
+            instruction->opcode = DB_IR_OPCODE_LOAD_U64;
+            instruction->width = DB_IR_WIDTH_64;
+            instruction->destination_register = record->memory.register_operand;
+            return DB_X64_IR_LOWER_OK;
+
+        case DB_X64_MEMORY_INSTRUCTION_STORE_R64:
+            instruction->opcode = DB_IR_OPCODE_STORE_U64;
+            instruction->width = DB_IR_WIDTH_64;
             instruction->source_register = record->memory.register_operand;
+            return DB_X64_IR_LOWER_OK;
+
+        case DB_X64_MEMORY_INSTRUCTION_CALL_RM64:
+            instruction->opcode = DB_IR_OPCODE_CALL_INDIRECT;
+            return DB_X64_IR_LOWER_OK;
+
+        case DB_X64_MEMORY_INSTRUCTION_JMP_RM64:
+            instruction->opcode = DB_IR_OPCODE_JUMP_INDIRECT;
+            return DB_X64_IR_LOWER_OK;
         }
-        return DB_X64_IR_LOWER_OK;
+
+        return DB_X64_IR_LOWER_UNSUPPORTED_RECORD;
     }
 
     switch (record->scalar.kind) {
