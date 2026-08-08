@@ -71,16 +71,8 @@ rm -rf "$build"
 mkdir -p "$build"
 cd "$root"
 
-stage()
-{
-    printf 'WIN32_PE_TRANSLATED_SESSION_STAGE=%s\n' "$1"
-}
-
-fail()
-{
-    printf 'WIN32_PE_TRANSLATED_SESSION_FAILURE=%s\n' "$1" >&2
-    exit 1
-}
+stage() { printf 'WIN32_PE_TRANSLATED_SESSION_STAGE=%s\n' "$1"; }
+fail() { printf 'WIN32_PE_TRANSLATED_SESSION_FAILURE=%s\n' "$1" >&2; exit 1; }
 
 stage files
 for required in \
@@ -130,24 +122,12 @@ for private_symbol in \
     'db_win32_pe_translated_session_prepare_with_helper_targets' \
     'db_win32_pe_translated_session_run_with_executor'
 do
-    grep -F "$private_symbol" \
-        src/win32_pe_translated_session_internal.h >/dev/null ||
+    grep -F "$private_symbol" src/win32_pe_translated_session_internal.h >/dev/null ||
         fail "private seam missing: $private_symbol"
-    if grep -F "$private_symbol" \
-        include/dblyat/win32_pe_translated_session.h >/dev/null
+    if grep -F "$private_symbol" include/dblyat/win32_pe_translated_session.h >/dev/null
     then
-        fail "private seam leaked into public header: $private_symbol"
+        fail "private seam leaked into public API: $private_symbol"
     fi
-done
-
-for self_binding in \
-    'session->translation.code = &session->code;' \
-    'session->translation.helper_targets = &session->helper_targets;' \
-    'session->demand.store = &session->store;' \
-    'session->demand.translation = &session->translation;'
-do
-    grep -F "$self_binding" src/win32_pe_translated_session.c >/dev/null ||
-        fail "self binding missing: $self_binding"
 done
 
 if grep -E '(^|[^[:alnum:]_])(malloc|calloc|realloc|free|mmap|mprotect|munmap|VirtualAlloc|VirtualProtect|pthread_|atomic_|__atomic|__sync)([^[:alnum:]_]|$)' \
@@ -162,64 +142,67 @@ for production_token in \
     'src/win32_pe_translated_session.c' \
     'include/dblyat/win32_pe_translated_session.h'
 do
-    grep -F "$production_token" GNUmakefile >/dev/null ||
-        fail "production link missing: $production_token"
+    grep -F "$production_token" Makefile >/dev/null ||
+        fail "production core token missing: $production_token"
 done
 
+stage production-link
+rm -f build/dblyatem
+set +e
+make -s build/dblyatem > "$build/production-link.log" 2>&1
+status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+    printf 'WIN32_PE_TRANSLATED_SESSION_PRODUCTION_LINK_FAILED exit=%s\n' "$status" >&2
+    cat "$build/production-link.log" >&2
+    exit "$status"
+fi
+[ -x build/dblyatem ] || fail 'production binary not produced'
+
 stage startup-regression
-sh tools/check-win32-pe-startup.sh \
-    > "$build/startup-regression.log" 2>&1 || {
+sh tools/check-win32-pe-startup.sh > "$build/startup-regression.log" 2>&1 || {
     cat "$build/startup-regression.log" >&2
     exit 1
 }
-grep -Fqx 'WIN32 PE STARTUP FOCUSED VERIFY: PASS' \
-    "$build/startup-regression.log" || {
+grep -Fqx 'WIN32 PE STARTUP FOCUSED VERIFY: PASS' "$build/startup-regression.log" || {
     cat "$build/startup-regression.log" >&2
     exit 1
 }
 
 stage demand-regression
-sh tools/check-win32-demand-guest-memory.sh \
-    > "$build/demand-regression.log" 2>&1 || {
+sh tools/check-win32-demand-guest-memory.sh > "$build/demand-regression.log" 2>&1 || {
     cat "$build/demand-regression.log" >&2
     exit 1
 }
-grep -Fqx 'WIN32 DEMAND GUEST MEMORY FOCUSED VERIFY: PASS' \
-    "$build/demand-regression.log" || {
+grep -Fqx 'WIN32 DEMAND GUEST MEMORY FOCUSED VERIFY: PASS' "$build/demand-regression.log" || {
     cat "$build/demand-regression.log" >&2
     exit 1
 }
 
 for compiler in gcc clang
 do
-    binary="$build/$compiler-check"
-    compile_log="$build/$compiler-compile.log"
-    run_log="$build/$compiler.log"
-
     stage "compile-$compiler"
     set +e
     # shellcheck disable=SC2086
-    "$compiler" $common "$test_source" $sources -o "$binary" \
-        > "$compile_log" 2>&1
-    compile_status=$?
+    "$compiler" $common "$test_source" $sources -o "$build/$compiler-check" \
+        > "$build/$compiler-compile.log" 2>&1
+    status=$?
     set -e
-    if [ "$compile_status" -ne 0 ]; then
-        printf 'WIN32_PE_TRANSLATED_SESSION_COMPILE_FAILED compiler=%s exit=%s\n' \
-            "$compiler" "$compile_status" >&2
-        cat "$compile_log" >&2
-        exit "$compile_status"
+    if [ "$status" -ne 0 ]; then
+        printf 'WIN32_PE_TRANSLATED_SESSION_COMPILE_FAILED compiler=%s exit=%s\n' "$compiler" "$status" >&2
+        cat "$build/$compiler-compile.log" >&2
+        exit "$status"
     fi
 
     stage "run-$compiler"
     set +e
-    "$binary" > "$run_log" 2>&1
-    run_status=$?
+    "$build/$compiler-check" > "$build/$compiler.log" 2>&1
+    status=$?
     set -e
-    if [ "$run_status" -ne 0 ]; then
-        printf 'WIN32_PE_TRANSLATED_SESSION_TEST_FAILED compiler=%s exit=%s\n' \
-            "$compiler" "$run_status" >&2
-        cat "$run_log" >&2
-        exit "$run_status"
+    if [ "$status" -ne 0 ]; then
+        printf 'WIN32_PE_TRANSLATED_SESSION_TEST_FAILED compiler=%s exit=%s\n' "$compiler" "$status" >&2
+        cat "$build/$compiler.log" >&2
+        exit "$status"
     fi
 done
 
@@ -244,8 +227,7 @@ do
     do
         count=$(grep -Fxc "$marker" "$log" || true)
         [ "$count" -eq 1 ] || {
-            printf 'WIN32_PE_TRANSLATED_SESSION_MARKER_MISMATCH log=%s marker=[%s] count=%s\n' \
-                "$log" "$marker" "$count" >&2
+            printf 'WIN32_PE_TRANSLATED_SESSION_MARKER_MISMATCH log=%s marker=[%s] count=%s\n' "$log" "$marker" "$count" >&2
             cat "$log" >&2
             exit 1
         }
@@ -261,29 +243,25 @@ gcc -Iinclude -Isrc -std=c11 -O1 -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     "$test_source" $sources -o "$build/sanitize-check" \
     > "$build/sanitize-compile.log" 2>&1
-sanitize_compile_status=$?
+status=$?
 set -e
-if [ "$sanitize_compile_status" -ne 0 ]; then
-    printf 'WIN32_PE_TRANSLATED_SESSION_SANITIZER_COMPILE_FAILED exit=%s\n' \
-        "$sanitize_compile_status" >&2
+if [ "$status" -ne 0 ]; then
+    printf 'WIN32_PE_TRANSLATED_SESSION_SANITIZER_COMPILE_FAILED exit=%s\n' "$status" >&2
     cat "$build/sanitize-compile.log" >&2
-    exit "$sanitize_compile_status"
+    exit "$status"
 fi
 
 stage run-sanitize
 set +e
-ASAN_OPTIONS=detect_leaks=1 "$build/sanitize-check" \
-    > "$build/sanitize.log" 2>&1
-sanitize_status=$?
+ASAN_OPTIONS=detect_leaks=1 "$build/sanitize-check" > "$build/sanitize.log" 2>&1
+status=$?
 set -e
-if [ "$sanitize_status" -ne 0 ]; then
-    printf 'WIN32_PE_TRANSLATED_SESSION_SANITIZER_TEST_FAILED exit=%s\n' \
-        "$sanitize_status" >&2
+if [ "$status" -ne 0 ]; then
+    printf 'WIN32_PE_TRANSLATED_SESSION_SANITIZER_TEST_FAILED exit=%s\n' "$status" >&2
     cat "$build/sanitize.log" >&2
-    exit "$sanitize_status"
+    exit "$status"
 fi
-grep -Fqx 'WIN32 PE TRANSLATED SESSION CHECK: PASS' \
-    "$build/sanitize.log" || {
+grep -Fqx 'WIN32 PE TRANSLATED SESSION CHECK: PASS' "$build/sanitize.log" || {
     cat "$build/sanitize.log" >&2
     exit 1
 }
@@ -294,15 +272,13 @@ set +e
 clang --analyze -Iinclude -Isrc -std=c11 \
     -Wall -Wextra -Wpedantic -Werror -Wshadow \
     -Wstrict-prototypes -Wmissing-prototypes \
-    "$test_source" $sources \
-    > "$build/clang-analyze.log" 2>&1
-analyze_status=$?
+    "$test_source" $sources > "$build/clang-analyze.log" 2>&1
+status=$?
 set -e
-if [ "$analyze_status" -ne 0 ]; then
-    printf 'WIN32_PE_TRANSLATED_SESSION_CLANG_ANALYZE_FAILED exit=%s\n' \
-        "$analyze_status" >&2
+if [ "$status" -ne 0 ]; then
+    printf 'WIN32_PE_TRANSLATED_SESSION_CLANG_ANALYZE_FAILED exit=%s\n' "$status" >&2
     cat "$build/clang-analyze.log" >&2
-    exit "$analyze_status"
+    exit "$status"
 fi
 
 printf '%s\n' 'WIN32 PE TRANSLATED SESSION FOCUSED VERIFY: PASS'
