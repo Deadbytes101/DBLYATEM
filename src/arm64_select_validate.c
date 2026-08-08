@@ -140,6 +140,17 @@ static bool db_arm64_select_no_condition_trap_flags(
            instruction->flag_effect == DB_IR_FLAG_EFFECT_NONE;
 }
 
+static bool db_arm64_select_indirect_control(
+    const db_ir_instruction *instruction)
+{
+    return instruction->width == DB_IR_WIDTH_NONE &&
+           instruction->immediate == 0u &&
+           db_arm64_select_no_registers(instruction) &&
+           instruction->address.mode != DB_IR_ADDRESS_NONE &&
+           db_arm64_select_no_target(instruction) &&
+           db_arm64_select_no_condition_trap_flags(instruction);
+}
+
 bool db_arm64_select_ir_valid_internal(const db_ir_instruction *instruction)
 {
     if (!db_arm64_select_common_valid(instruction)) {
@@ -216,6 +227,10 @@ bool db_arm64_select_ir_valid_internal(const db_ir_instruction *instruction)
                db_arm64_select_direct_target(instruction) &&
                db_arm64_select_no_condition_trap_flags(instruction);
 
+    case DB_IR_OPCODE_CALL_INDIRECT:
+    case DB_IR_OPCODE_JUMP_INDIRECT:
+        return db_arm64_select_indirect_control(instruction);
+
     case DB_IR_OPCODE_RETURN:
         return instruction->width == DB_IR_WIDTH_NONE &&
                instruction->immediate == 0u &&
@@ -252,8 +267,10 @@ bool db_arm64_select_ir_valid_internal(const db_ir_instruction *instruction)
 bool db_arm64_select_terminator_internal(db_ir_opcode opcode)
 {
     return opcode == DB_IR_OPCODE_CALL_DIRECT ||
+           opcode == DB_IR_OPCODE_CALL_INDIRECT ||
            opcode == DB_IR_OPCODE_RETURN ||
            opcode == DB_IR_OPCODE_JUMP_DIRECT ||
+           opcode == DB_IR_OPCODE_JUMP_INDIRECT ||
            opcode == DB_IR_OPCODE_JUMP_CONDITIONAL ||
            opcode == DB_IR_OPCODE_TRAP;
 }
@@ -261,6 +278,12 @@ bool db_arm64_select_terminator_internal(db_ir_opcode opcode)
 uint32_t db_arm64_select_expansion_internal(db_ir_opcode opcode)
 {
     switch (opcode) {
+    case DB_IR_OPCODE_CALL_INDIRECT:
+        return UINT32_C(4);
+
+    case DB_IR_OPCODE_JUMP_INDIRECT:
+        return UINT32_C(3);
+
     case DB_IR_OPCODE_XOR:
     case DB_IR_OPCODE_LOAD_U64:
     case DB_IR_OPCODE_STORE_U64:

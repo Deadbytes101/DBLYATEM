@@ -76,7 +76,9 @@ db_x64_memory_instruction_status db_x64_memory_instruction_decode_one(
     size_t modrm_index;
     uint8_t rex = 0u;
     uint8_t opcode;
+    uint8_t opcode_extension = 0u;
     uint8_t leading_length;
+    uint8_t minimum_length;
 
     if (bytes == NULL || instruction == NULL) {
         return DB_X64_MEMORY_INSTRUCTION_NULL_ARGUMENT;
@@ -114,18 +116,35 @@ db_x64_memory_instruction_status db_x64_memory_instruction_decode_one(
         }
     }
 
-    if (rex == 0u || (rex & UINT8_C(0x08)) == 0u) {
+    opcode = bytes[opcode_index];
+    if (opcode != UINT8_C(0x8b) &&
+        opcode != UINT8_C(0x89) &&
+        opcode != UINT8_C(0xff)) {
+        return DB_X64_MEMORY_INSTRUCTION_UNSUPPORTED_OPCODE;
+    }
+
+    if ((opcode == UINT8_C(0x8b) || opcode == UINT8_C(0x89)) &&
+        (rex == 0u || (rex & UINT8_C(0x08)) == 0u)) {
         return DB_X64_MEMORY_INSTRUCTION_BAD_REX;
     }
 
-    opcode = bytes[opcode_index];
-    if (opcode != UINT8_C(0x8b) && opcode != UINT8_C(0x89)) {
-        return DB_X64_MEMORY_INSTRUCTION_UNSUPPORTED_OPCODE;
+    if (opcode == UINT8_C(0xff) &&
+        (rex & UINT8_C(0x04)) != 0u) {
+        return DB_X64_MEMORY_INSTRUCTION_BAD_REX;
     }
 
     modrm_index = opcode_index + 1u;
     if (available_size <= modrm_index) {
         return DB_X64_MEMORY_INSTRUCTION_TRUNCATED;
+    }
+
+    if (opcode == UINT8_C(0xff)) {
+        opcode_extension =
+            (uint8_t)((bytes[modrm_index] >> 3u) & UINT8_C(0x07));
+        if (opcode_extension != UINT8_C(2) &&
+            opcode_extension != UINT8_C(4)) {
+            return DB_X64_MEMORY_INSTRUCTION_UNSUPPORTED_OPCODE;
+        }
     }
 
     leading_length = (uint8_t)modrm_index;
@@ -139,7 +158,10 @@ db_x64_memory_instruction_status db_x64_memory_instruction_decode_one(
         return db_x64_memory_instruction_map_memory_status(memory_status);
     }
 
-    if (planned.memory.instruction_length < UINT8_C(3) ||
+    minimum_length = opcode == UINT8_C(0xff)
+                         ? UINT8_C(2)
+                         : UINT8_C(3);
+    if (planned.memory.instruction_length < minimum_length ||
         planned.memory.instruction_length > (uint8_t)DB_X64_DECODE_MAX_LENGTH ||
         planned.memory.register_operand >= UINT8_C(16) ||
         planned.memory.address.reserved[0] != 0u ||
@@ -152,12 +174,27 @@ db_x64_memory_instruction_status db_x64_memory_instruction_decode_one(
         return DB_X64_MEMORY_INSTRUCTION_INVALID_ENCODING;
     }
 
-    planned.kind = opcode == UINT8_C(0x8b)
-                       ? DB_X64_MEMORY_INSTRUCTION_LOAD_R64
-                       : DB_X64_MEMORY_INSTRUCTION_STORE_R64;
+    if (opcode == UINT8_C(0xff) &&
+        planned.memory.register_operand != opcode_extension) {
+        return DB_X64_MEMORY_INSTRUCTION_INVALID_ENCODING;
+    }
+
+    if (opcode == UINT8_C(0x8b)) {
+        planned.kind = DB_X64_MEMORY_INSTRUCTION_LOAD_R64;
+        planned.register_operand = planned.memory.register_operand;
+    } else if (opcode == UINT8_C(0x89)) {
+        planned.kind = DB_X64_MEMORY_INSTRUCTION_STORE_R64;
+        planned.register_operand = planned.memory.register_operand;
+    } else if (opcode_extension == UINT8_C(2)) {
+        planned.kind = DB_X64_MEMORY_INSTRUCTION_CALL_RM64;
+        planned.register_operand = DB_X64_REGISTER_NONE;
+    } else {
+        planned.kind = DB_X64_MEMORY_INSTRUCTION_JMP_RM64;
+        planned.register_operand = DB_X64_REGISTER_NONE;
+    }
+
     planned.rex = rex;
     planned.opcode = opcode;
-    planned.register_operand = planned.memory.register_operand;
     planned.instruction_length = planned.memory.instruction_length;
     planned.reserved[0] = 0u;
     planned.reserved[1] = 0u;
@@ -197,7 +234,9 @@ const char *db_x64_memory_instruction_kind_name(
 {
     static const char *const names[] = {
         "load r64 from memory",
-        "store r64 to memory"
+        "store r64 to memory",
+        "call memory r/m64",
+        "jump memory r/m64"
     };
 
     if ((size_t)kind >= sizeof(names) / sizeof(names[0])) {

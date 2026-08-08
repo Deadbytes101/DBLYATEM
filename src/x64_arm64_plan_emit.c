@@ -181,6 +181,14 @@ void db_x64_arm64_plan_emit_internal(
             selection->destination_register, DB_X64_ARM64_HOST_SECONDARY);
         return;
 
+    case DB_ARM64_SELECT_LOAD_U64_TARGET:
+        record = helper_record(selection, source_select_index,
+                               DB_X64_ARM64_HELPER_READ_GUEST_U64, false);
+        record.host_source = DB_X64_ARM64_HOST_PRIMARY;
+        record.host_destination = DB_X64_ARM64_HOST_TARGET;
+        records[0] = record;
+        return;
+
     case DB_ARM64_SELECT_STORE_U64:
         records[0] = state_record(
             selection, source_select_index, DB_X64_ARM64_PLAN_LOAD_STATE_U64,
