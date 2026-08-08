@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define DB_WIN32_TRANSLATED_RUN_FORMAT_VERSION UINT32_C(1)
+#define DB_WIN32_TRANSLATED_RUN_FORMAT_VERSION UINT32_C(2)
 
 typedef enum db_win32_translated_run_status {
     DB_WIN32_TRANSLATED_RUN_OK = 0,
@@ -31,6 +31,7 @@ typedef enum db_win32_translated_run_stop_reason {
 
 typedef struct db_win32_translated_run_config {
     const db_arm64_block_cache *cache;
+    const db_linux_arm64_guest_memory *guest_memory;
     const void *gateway_buffer;
     const db_iat_target *targets;
     const db_gateway_dispatch_handler *handlers;
