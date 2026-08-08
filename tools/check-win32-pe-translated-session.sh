@@ -5,6 +5,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 build="$root/build/win32-pe-translated-session-check"
 common='-Iinclude -Isrc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wshadow -Wstrict-prototypes -Wmissing-prototypes'
 test_source='tests/win32_pe_translated_session_check.c'
+ownership_test='tests/win32_pe_translated_session_ownership_check.c'
 sources='
 src/win32_pe_translated_session.c
 src/win32_pe_startup.c
@@ -80,6 +81,7 @@ for required in \
     src/win32_pe_translated_session_internal.h \
     src/win32_pe_translated_session.c \
     "$test_source" \
+    "$ownership_test" \
     tools/check-win32-pe-startup.sh \
     tools/check-win32-demand-guest-memory.sh
 do
@@ -99,7 +101,9 @@ for requirement in \
     'db_linux_arm64_guest_runtime_helper_targets' \
     'db_win32_pe_startup_prepare' \
     'db_win32_translated_demand_run' \
-    'db_arm64_translation_store_dispose'
+    'db_arm64_translation_store_dispose' \
+    'db_session_run_output_disjoint' \
+    'db_session_owned_shape_valid'
 do
     grep -F "$requirement" \
         include/dblyat/win32_pe_translated_session.h \
@@ -204,6 +208,31 @@ do
         cat "$build/$compiler.log" >&2
         exit "$status"
     fi
+
+    stage "compile-ownership-$compiler"
+    set +e
+    # shellcheck disable=SC2086
+    "$compiler" $common "$ownership_test" $sources \
+        -o "$build/$compiler-ownership-check" \
+        > "$build/$compiler-ownership-compile.log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+        printf 'WIN32_PE_TRANSLATED_SESSION_OWNERSHIP_COMPILE_FAILED compiler=%s exit=%s\n' "$compiler" "$status" >&2
+        cat "$build/$compiler-ownership-compile.log" >&2
+        exit "$status"
+    fi
+
+    stage "run-ownership-$compiler"
+    set +e
+    "$build/$compiler-ownership-check" > "$build/$compiler-ownership.log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+        printf 'WIN32_PE_TRANSLATED_SESSION_OWNERSHIP_TEST_FAILED compiler=%s exit=%s\n' "$compiler" "$status" >&2
+        cat "$build/$compiler-ownership.log" >&2
+        exit "$status"
+    fi
 done
 
 stage marker-validation
@@ -228,6 +257,22 @@ do
         count=$(grep -Fxc "$marker" "$log" || true)
         [ "$count" -eq 1 ] || {
             printf 'WIN32_PE_TRANSLATED_SESSION_MARKER_MISMATCH log=%s marker=[%s] count=%s\n' "$log" "$marker" "$count" >&2
+            cat "$log" >&2
+            exit 1
+        }
+    done
+done
+
+for log in "$build/gcc-ownership.log" "$build/clang-ownership.log"
+do
+    for marker in \
+        'SESSION RUN OUTPUT ALIAS REJECTION: PASS' \
+        'SESSION COPIED DISPOSE REJECTION: PASS' \
+        'WIN32 PE SESSION OWNERSHIP CHECK: PASS'
+    do
+        count=$(grep -Fxc "$marker" "$log" || true)
+        [ "$count" -eq 1 ] || {
+            printf 'WIN32_PE_TRANSLATED_SESSION_OWNERSHIP_MARKER_MISMATCH log=%s marker=[%s] count=%s\n' "$log" "$marker" "$count" >&2
             cat "$log" >&2
             exit 1
         }
@@ -266,13 +311,48 @@ grep -Fqx 'WIN32 PE TRANSLATED SESSION CHECK: PASS' "$build/sanitize.log" || {
     exit 1
 }
 
+stage compile-ownership-sanitize
+set +e
+# shellcheck disable=SC2086
+gcc -Iinclude -Isrc -std=c11 -O1 -g \
+    -Wall -Wextra -Wpedantic -Werror -Wshadow \
+    -Wstrict-prototypes -Wmissing-prototypes \
+    -fsanitize=address,undefined -fno-omit-frame-pointer \
+    "$ownership_test" $sources -o "$build/sanitize-ownership-check" \
+    > "$build/sanitize-ownership-compile.log" 2>&1
+status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+    printf 'WIN32_PE_TRANSLATED_SESSION_OWNERSHIP_SANITIZER_COMPILE_FAILED exit=%s\n' "$status" >&2
+    cat "$build/sanitize-ownership-compile.log" >&2
+    exit "$status"
+fi
+
+stage run-ownership-sanitize
+set +e
+ASAN_OPTIONS=detect_leaks=1 "$build/sanitize-ownership-check" \
+    > "$build/sanitize-ownership.log" 2>&1
+status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+    printf 'WIN32_PE_TRANSLATED_SESSION_OWNERSHIP_SANITIZER_TEST_FAILED exit=%s\n' "$status" >&2
+    cat "$build/sanitize-ownership.log" >&2
+    exit "$status"
+fi
+grep -Fqx 'WIN32 PE SESSION OWNERSHIP CHECK: PASS' \
+    "$build/sanitize-ownership.log" || {
+    cat "$build/sanitize-ownership.log" >&2
+    exit 1
+}
+
 stage clang-analyze
 set +e
 # shellcheck disable=SC2086
 clang --analyze -Iinclude -Isrc -std=c11 \
     -Wall -Wextra -Wpedantic -Werror -Wshadow \
     -Wstrict-prototypes -Wmissing-prototypes \
-    "$test_source" $sources > "$build/clang-analyze.log" 2>&1
+    "$test_source" "$ownership_test" $sources \
+    > "$build/clang-analyze.log" 2>&1
 status=$?
 set -e
 if [ "$status" -ne 0 ]; then
@@ -288,6 +368,7 @@ printf '%s\n' 'SESSION MULTI RUN CACHE OWNERSHIP: PASS'
 printf '%s\n' 'SESSION TERMINATION LIFECYCLE: PASS'
 printf '%s\n' 'SESSION INFRA FAILURE TRANSACTIONALITY: PASS'
 printf '%s\n' 'SESSION DISPOSE RETRY CONTRACT: PASS'
+printf '%s\n' 'SESSION OWNERSHIP ALIAS BOUNDARY: PASS'
 printf '%s\n' 'PRIVATE TEST SEAMS NOT PUBLIC: PASS'
 printf '%s\n' 'PRODUCTION SESSION LINK CONTRACT: PASS'
 printf '%s\n' 'HOST FILE LOADING CLI: NOT IMPLEMENTED'
