@@ -8,7 +8,8 @@ CORE := src/pe.c src/map.c src/reloc.c src/reloc_apply.c src/import.c src/bind.c
         src/iat_plan.c src/iat_apply.c src/gateway_plan.c src/gateway_emit.c \
         src/gateway_decode.c src/gateway_lookup.c src/gateway_dispatch.c \
         src/gateway_frame.c src/gateway_return.c src/gateway_return_apply.c \
-        src/gateway_complete.c src/gateway_enter.c
+        src/gateway_complete.c src/gateway_enter.c \
+        src/win32_pe_translated_session.c
 HEADERS := include/dblyat/pe.h include/dblyat/map.h include/dblyat/reloc.h \
            include/dblyat/reloc_apply.h include/dblyat/import.h \
            include/dblyat/bind.h include/dblyat/iat_plan.h \
@@ -17,7 +18,8 @@ HEADERS := include/dblyat/pe.h include/dblyat/map.h include/dblyat/reloc.h \
            include/dblyat/gateway_lookup.h include/dblyat/gateway_dispatch.h \
            include/dblyat/gateway_frame.h include/dblyat/gateway_return.h \
            include/dblyat/gateway_return_apply.h include/dblyat/gateway_complete.h \
-           include/dblyat/gateway_enter.h
+           include/dblyat/gateway_enter.h \
+           include/dblyat/win32_pe_translated_session.h
 
 .PHONY: all test clean
 
