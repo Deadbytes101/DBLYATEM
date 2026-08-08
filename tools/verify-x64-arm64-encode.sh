@@ -25,6 +25,12 @@ then
     exit 1
 fi
 
+grep -F 'DB_X64_ARM64_HELPER_ARG0' include/dblyat/x64_arm64_plan.h >/dev/null
+grep -F 'DB_X64_ARM64_HELPER_ARG5' include/dblyat/x64_arm64_plan.h >/dev/null
+grep -F 'DB_X64_ARM64_ENCODE_BAD_HELPER_ABI' \
+    include/dblyat/x64_arm64_encode.h src/x64_arm64_encode.c >/dev/null
+grep -F 'helper_operand_abi_valid' src/x64_arm64_encode.c >/dev/null
+
 gcc $common tests/x64_arm64_encode_test.c \
     src/x64_arm64_encode.c \
     -o "$build/gcc-x64-arm64-encode-test"
@@ -59,6 +65,8 @@ dblyat_arm64_reference_words:
     movk x16, #0x1122, lsl #48
     eor x16, x16, x17
     eor w16, w16, w17
+    movz x0, #64
+    movz x1, #3
     bl .
     b .
 ASSEMBLY
@@ -79,7 +87,7 @@ actual=$(readelf -x .text "$build/reference.o" | awk '
 }
 ')
 
-expected='1f2003d5700a40f9710e00f910f18ed2d0acaaf29068c6f25024e2f2100211ca1002114a0000009400000014'
+expected='1f2003d5700a40f9710e00f910f18ed2d0acaaf29068c6f25024e2f2100211ca1002114a000880d2610080d20000009400000014'
 
 if [ "$actual" != "$expected" ]; then
     printf '%s\n' 'ARM64 ASSEMBLER REFERENCE WORDS CHANGED' >&2
@@ -89,5 +97,7 @@ if [ "$actual" != "$expected" ]; then
 fi
 
 printf '%s\n' 'ARM64 ASSEMBLER CROSSCHECK: PASS'
+printf '%s\n' 'NONTERMINAL HELPER OPERAND ABI WORDS: PASS'
+printf '%s\n' 'STALE HELPER OPERAND ABI REJECTION: PASS'
 printf '%s\n' 'X64 ARM64 ENCODE VERIFY: PASS'
 printf '%s\n' 'ARM64 RELOCATION ABI VERIFY: PASS'
