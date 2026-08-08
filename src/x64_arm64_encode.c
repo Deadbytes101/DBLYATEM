@@ -43,8 +43,7 @@ static bool host_scratch(uint8_t r)
 
 static bool helper_argument_register(uint8_t r)
 {
-    return r >= DB_X64_ARM64_HELPER_ARG0 &&
-           r <= DB_X64_ARM64_HELPER_ARG5;
+    return r <= DB_X64_ARM64_HELPER_ARG5;
 }
 
 static bool materialization_register(uint8_t r)
