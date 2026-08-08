@@ -40,7 +40,22 @@ _Static_assert(offsetof(db_linux_arm64_translation_context,
 _Static_assert(offsetof(db_linux_arm64_translation_context,
                         format_version) == 136u,
                "translated entry context version offset changed");
-_Static_assert(sizeof(db_linux_arm64_translation_context) == 144u,
+_Static_assert(offsetof(db_linux_arm64_translation_context,
+                        guest_memory) == 144u,
+               "translated entry guest memory offset changed");
+_Static_assert(offsetof(db_linux_arm64_translation_context,
+                        helper_fault_address) == 248u,
+               "translated entry helper fault address offset changed");
+_Static_assert(offsetof(db_linux_arm64_translation_context,
+                        helper_fault) == 256u,
+               "translated entry helper fault offset changed");
+_Static_assert(offsetof(db_linux_arm64_translation_context,
+                        helper_access) == 260u,
+               "translated entry helper access offset changed");
+_Static_assert(offsetof(db_linux_arm64_translation_context,
+                        guest_memory_bound) == 264u,
+               "translated entry guest memory bound offset changed");
+_Static_assert(sizeof(db_linux_arm64_translation_context) == 272u,
                "translated entry context ABI size changed");
 
 static bool zero_bytes(const void *data, size_t size)
@@ -49,11 +64,8 @@ static bool zero_bytes(const void *data, size_t size)
     size_t index;
 
     for (index = 0u; index < size; ++index) {
-        if (bytes[index] != 0u) {
-            return false;
-        }
+        if (bytes[index] != 0u) return false;
     }
-
     return true;
 }
 
@@ -65,21 +77,15 @@ static bool regions_overlap(const void *left,
     const uintptr_t left_address = (uintptr_t)left;
     const uintptr_t right_address = (uintptr_t)right;
 
-    if (left_size == 0u || right_size == 0u) {
-        return false;
-    }
-
-    if (left_address <= right_address) {
-        return right_address - left_address < left_size;
-    }
-
-    return left_address - right_address < right_size;
+    if (left_size == 0u || right_size == 0u) return false;
+    return left_address <= right_address
+               ? right_address - left_address < left_size
+               : left_address - right_address < right_size;
 }
 
 static bool arm64_host_address_nonzero(uint64_t address)
 {
-    return address != 0u &&
-           (address >> 48u) == UINT64_C(0);
+    return address != 0u && (address >> 48u) == UINT64_C(0);
 }
 
 static bool entry_address_valid(uint64_t entry_address)
@@ -88,13 +94,38 @@ static bool entry_address_valid(uint64_t entry_address)
            (entry_address & UINT64_C(3)) == 0u;
 }
 
+static bool helper_state_clear(
+    const db_linux_arm64_translation_context *context)
+{
+    return context->helper_fault ==
+               (uint32_t)DB_LINUX_ARM64_HELPER_FAULT_NONE &&
+           context->helper_access ==
+               (uint32_t)DB_LINUX_ARM64_GUEST_ACCESS_NONE &&
+           context->helper_fault_address == 0u &&
+           zero_bytes(context->helper_reserved,
+                      sizeof(context->helper_reserved));
+}
+
+static bool guest_binding_valid(
+    const db_linux_arm64_translation_context *context)
+{
+    if (context->guest_memory_bound == 0u) {
+        return zero_bytes(&context->guest_memory,
+                          sizeof(context->guest_memory));
+    }
+    return context->guest_memory_bound == 1u &&
+           db_linux_arm64_guest_memory_validate(&context->guest_memory) ==
+               DB_LINUX_ARM64_GUEST_RUNTIME_OK;
+}
+
 static bool context_base_valid(
     const db_linux_arm64_translation_context *context)
 {
     return context->format_version ==
                DB_LINUX_ARM64_TRANSLATION_ENTRY_FORMAT_VERSION &&
            context->terminal_return_count != UINT64_MAX &&
-           zero_bytes(context->reserved, sizeof(context->reserved));
+           zero_bytes(context->reserved, sizeof(context->reserved)) &&
+           helper_state_clear(context) && guest_binding_valid(context);
 }
 
 static bool context_valid(
@@ -160,16 +191,13 @@ db_linux_arm64_translation_entry_status
     if (context == NULL || planned_exit == NULL) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_NULL_ARGUMENT;
     }
-
     if (regions_overlap(context, sizeof(*context),
                         planned_exit, sizeof(*planned_exit))) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_BUFFER_OVERLAP;
     }
-
     if (!context_base_valid(context)) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_BAD_CONTEXT;
     }
-
     if (db_translated_terminal_exit_validate_planned(planned_exit) !=
         DB_TRANSLATED_TERMINAL_EXIT_OK) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_BAD_TERMINAL_EXIT;
@@ -185,6 +213,43 @@ db_linux_arm64_translation_entry_status
 }
 
 db_linux_arm64_translation_entry_status
+ db_linux_arm64_translation_context_bind_guest_memory(
+    db_linux_arm64_translation_context *context,
+    const db_linux_arm64_guest_memory *memory)
+{
+    db_linux_arm64_translation_context completed;
+
+    if (context == NULL || memory == NULL) {
+        return DB_LINUX_ARM64_TRANSLATION_ENTRY_NULL_ARGUMENT;
+    }
+    if (regions_overlap(context, sizeof(*context),
+                        memory, sizeof(*memory))) {
+        return DB_LINUX_ARM64_TRANSLATION_ENTRY_BUFFER_OVERLAP;
+    }
+    if (!context_base_valid(context)) {
+        return DB_LINUX_ARM64_TRANSLATION_ENTRY_BAD_CONTEXT;
+    }
+    if (db_linux_arm64_guest_memory_validate(memory) !=
+        DB_LINUX_ARM64_GUEST_RUNTIME_OK) {
+        return DB_LINUX_ARM64_TRANSLATION_ENTRY_BAD_GUEST_MEMORY;
+    }
+
+    completed = *context;
+    completed.guest_memory = *memory;
+    completed.guest_memory_bound = 1u;
+    completed.helper_fault =
+        (uint32_t)DB_LINUX_ARM64_HELPER_FAULT_NONE;
+    completed.helper_access =
+        (uint32_t)DB_LINUX_ARM64_GUEST_ACCESS_NONE;
+    completed.helper_fault_address = 0u;
+    (void)memset(completed.helper_reserved,
+                 0,
+                 sizeof(completed.helper_reserved));
+    *context = completed;
+    return DB_LINUX_ARM64_TRANSLATION_ENTRY_OK;
+}
+
+db_linux_arm64_translation_entry_status
  db_linux_arm64_translation_enter(
     uint64_t entry_address,
     db_x64_scalar_state *state,
@@ -194,7 +259,6 @@ db_linux_arm64_translation_entry_status
     if (state == NULL || context == NULL || audit == NULL) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_NULL_ARGUMENT;
     }
-
     if (regions_overlap(state, sizeof(*state),
                         context, sizeof(*context)) ||
         regions_overlap(state, sizeof(*state),
@@ -203,11 +267,9 @@ db_linux_arm64_translation_entry_status
                         audit, sizeof(*audit))) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_BUFFER_OVERLAP;
     }
-
     if (!entry_address_valid(entry_address)) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_BAD_ENTRY_ADDRESS;
     }
-
     if (!context_valid(context)) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_BAD_CONTEXT;
     }
@@ -254,9 +316,13 @@ db_linux_arm64_translation_entry_status
         &planned_state,
         &planned_context);
 
+    if (planned_context.helper_fault !=
+        (uint32_t)DB_LINUX_ARM64_HELPER_FAULT_NONE) {
+        return DB_LINUX_ARM64_TRANSLATION_ENTRY_HELPER_FAILED;
+    }
+
     completed.terminal_return_count_after =
         planned_context.terminal_return_count;
-
     if (planned_context.terminal_return_count !=
         expected_return_count) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_RETURN_NOT_OBSERVED;
@@ -264,7 +330,6 @@ db_linux_arm64_translation_entry_status
 
     completed.terminal_return_observed = 1u;
     completed.observed_kind = planned_context.observed_exit.kind;
-
     if (planned_context.observed_exit.kind !=
         planned_context.planned_exit.kind) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_TERMINAL_EXIT_MISMATCH;
@@ -275,7 +340,6 @@ db_linux_arm64_translation_entry_status
     if (exit_status != DB_TRANSLATED_TERMINAL_EXIT_OK) {
         return DB_LINUX_ARM64_TRANSLATION_ENTRY_BAD_TERMINAL_EXIT;
     }
-
     exit_status = db_translated_terminal_exit_match(
         &planned_context.planned_exit,
         &planned_context.observed_exit);
@@ -314,7 +378,6 @@ uint64_t db_linux_arm64_translation_terminal_helper_address(
     case DB_TRANSLATED_TERMINAL_EXIT_NONE:
         break;
     }
-
     return UINT64_C(0);
 #endif
 }
@@ -337,12 +400,13 @@ const char *db_linux_arm64_translation_entry_status_name(
         "unsupported host",
         "terminal return not observed",
         "bad translated terminal exit",
-        "translated terminal exit mismatch"
+        "translated terminal exit mismatch",
+        "bad guest memory",
+        "translated helper failed"
     };
 
     if ((size_t)status >= sizeof(names) / sizeof(names[0])) {
         return "unknown ARM64 translated entry status";
     }
-
     return names[(size_t)status];
 }
