@@ -477,6 +477,7 @@ db_arm64_translation_store_status db_arm64_translation_store_fill(
     db_linux_arm64_wx_status wx_status;
     db_arm64_published_block_status published_status;
     uint64_t code_base = 0u;
+    size_t image_byte_count;
     size_t slot_index;
 
     if (store == NULL || config == NULL || workspace == NULL ||
@@ -620,6 +621,15 @@ db_arm64_translation_store_status db_arm64_translation_store_fill(
         return DB_ARM64_TRANSLATION_STORE_RELOCATE_FAILED;
     }
 
+    if (!db_store_multiply(
+            (size_t)completed.relocate.output_word_count,
+            sizeof(*workspace->output_words),
+            &image_byte_count) ||
+        image_byte_count == 0u ||
+        image_byte_count > workspace->image_capacity) {
+        return DB_ARM64_TRANSLATION_STORE_IMAGE_FAILED;
+    }
+
     image_status = db_arm64_code_image_build(
         workspace->output_words,
         completed.relocate.output_word_count,
@@ -627,7 +637,7 @@ db_arm64_translation_store_status db_arm64_translation_store_fill(
         0u,
         config->page_size,
         workspace->image_bytes,
-        workspace->image_capacity,
+        image_byte_count,
         &completed.image);
     completed.image_status = (uint32_t)image_status;
     if (image_status != DB_ARM64_CODE_IMAGE_OK) {
