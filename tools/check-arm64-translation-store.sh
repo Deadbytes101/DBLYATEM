@@ -35,30 +35,114 @@ src/x64_arm64_relocate_emit.c
 src/arm64_code_image.c
 '
 
+stage()
+{
+    printf 'ARM64_STORE_STAGE=%s\n' "$1"
+}
+
+require_file()
+{
+    path=$1
+    [ -f "$path" ] || {
+        printf 'ARM64_STORE_REQUIRED_FILE_MISSING=%s\n' "$path" >&2
+        exit 1
+    }
+}
+
+require_fixed()
+{
+    pattern=$1
+    path=$2
+    grep -F "$pattern" "$path" >/dev/null || {
+        printf 'ARM64_STORE_STATIC_REQUIREMENT_MISSING file=%s pattern=[%s]\n' \
+            "$path" "$pattern" >&2
+        exit 1
+    }
+}
+
+run_compiler_test()
+{
+    compiler=$1
+    binary="$build/$compiler-test"
+    compile_log="$build/$compiler-compile.log"
+    run_log="$build/$compiler.log"
+
+    stage "compile-$compiler"
+    set +e
+    # shellcheck disable=SC2086
+    "$compiler" $common "$test_source" $sources \
+        -o "$binary" >"$compile_log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+        printf 'ARM64_STORE_COMPILE_FAILED compiler=%s exit=%s\n' \
+            "$compiler" "$status" >&2
+        cat "$compile_log" >&2
+        exit "$status"
+    fi
+
+    stage "run-$compiler"
+    set +e
+    "$binary" >"$run_log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+        printf 'ARM64_STORE_TEST_FAILED compiler=%s exit=%s\n' \
+            "$compiler" "$status" >&2
+        cat "$run_log" >&2
+        exit "$status"
+    fi
+}
+
+check_markers()
+{
+    log=$1
+    for marker in \
+        'ARM64 TRANSLATION STORE TEST: PASS' \
+        'TRANSLATION STORE MISS PUBLISH: PASS' \
+        'TRANSLATION STORE CACHE HIT REUSE: PASS' \
+        'TRANSLATION STORE PREPUBLISH TRANSACTIONALITY: PASS' \
+        'TRANSLATION STORE POSTPUBLISH ROLLBACK: PASS' \
+        'TRANSLATION STORE ROLLBACK POISON CLEANUP: PASS' \
+        'NATIVE PUBLISHED BLOCK EXECUTION: NOT RUN'
+    do
+        count=$(grep -Fxc "$marker" "$log" || true)
+        [ "$count" -eq 1 ] || {
+            printf 'ARM64 TRANSLATION STORE MARKER MISMATCH log=%s marker=[%s] count=%s\n' \
+                "$log" "$marker" "$count" >&2
+            cat "$log" >&2
+            exit 1
+        }
+    done
+}
+
 rm -rf "$build"
 mkdir -p "$build"
 cd "$root"
 
-[ -f "$store_header" ]
-[ -f "$store_source" ]
-[ -f "$test_source" ]
+stage files
+require_file "$store_header"
+require_file "$store_source"
+require_file "$test_source"
 
-grep -F 'db_arm64_block_cache_lookup' "$store_source" >/dev/null
-grep -F 'db_x64_block_build' "$store_source" >/dev/null
-grep -F 'db_x64_ir_lower_block' "$store_source" >/dev/null
-grep -F 'db_arm64_select_block' "$store_source" >/dev/null
-grep -F 'db_x64_arm64_plan_block' "$store_source" >/dev/null
-grep -F 'db_x64_arm64_encode_block' "$store_source" >/dev/null
-grep -F 'db_x64_arm64_resolve_helpers' "$store_source" >/dev/null
-grep -F 'db_arm64_code_image_build' "$store_source" >/dev/null
-grep -F 'db_linux_arm64_wx_publish' "$store_source" >/dev/null
-grep -F 'db_arm64_published_block_build' "$store_source" >/dev/null
-grep -F 'db_arm64_published_block_bind_terminal' "$store_source" >/dev/null
-grep -F 'db_arm64_block_cache_insert' "$store_source" >/dev/null
-grep -F 'db_linux_arm64_wx_release' "$store_source" >/dev/null
-grep -F 'DB_ARM64_TRANSLATION_STORE_POISONED' "$store_source" >/dev/null
-grep -F 'reserve_code_base' "$store_header" >/dev/null
+stage static-requirements
+require_fixed 'db_arm64_block_cache_lookup' "$store_source"
+require_fixed 'db_x64_block_build' "$store_source"
+require_fixed 'db_x64_ir_lower_block' "$store_source"
+require_fixed 'db_arm64_select_block' "$store_source"
+require_fixed 'db_x64_arm64_plan_block' "$store_source"
+require_fixed 'db_x64_arm64_encode_block' "$store_source"
+require_fixed 'db_x64_arm64_resolve_helpers' "$store_source"
+require_fixed 'db_arm64_code_image_build' "$store_source"
+require_fixed 'db_linux_arm64_wx_publish' "$store_source"
+require_fixed 'db_arm64_published_block_build' "$store_source"
+require_fixed 'db_arm64_published_block_bind_terminal' "$store_source"
+require_fixed 'db_arm64_block_cache_insert' "$store_source"
+require_fixed 'db_linux_arm64_wx_release' "$store_source"
+require_fixed 'DB_ARM64_TRANSLATION_STORE_POISONED' "$store_source"
+require_fixed 'reserve_code_base' "$store_header"
 
+stage boundaries
 if grep -E 'win32|kernel32|gateway' "$store_source" "$store_header" >/dev/null
 then
     printf '%s\n' 'ARM64 TRANSLATION STORE CONTAMINATED WITH WIN32/GATEWAY SEMANTICS' >&2
@@ -74,63 +158,57 @@ fi
 
 for compiler in gcc clang
 do
-    binary="$build/$compiler-test"
-    # shellcheck disable=SC2086
-    "$compiler" $common "$test_source" $sources -o "$binary"
-    "$binary" > "$build/$compiler.log"
-
+    run_compiler_test "$compiler"
 done
 
-for log in "$build/gcc.log" "$build/clang.log"
-do
-    for marker in \
-        'ARM64 TRANSLATION STORE TEST: PASS' \
-        'TRANSLATION STORE MISS PUBLISH: PASS' \
-        'TRANSLATION STORE CACHE HIT REUSE: PASS' \
-        'TRANSLATION STORE PREPUBLISH TRANSACTIONALITY: PASS' \
-        'TRANSLATION STORE POSTPUBLISH ROLLBACK: PASS' \
-        'TRANSLATION STORE ROLLBACK POISON CLEANUP: PASS' \
-        'NATIVE PUBLISHED BLOCK EXECUTION: NOT RUN'
-    do
-        count=$(grep -Fxc "$marker" "$log" || true)
-        [ "$count" -eq 1 ] || {
-            printf 'ARM64 TRANSLATION STORE MARKER MISMATCH log=%s marker=[%s] count=%s\n' \
-                "$log" "$marker" "$count" >&2
-            exit 1
-        }
-    done
-done
+stage marker-validation
+check_markers "$build/gcc.log"
+check_markers "$build/clang.log"
 
+stage compile-sanitize
+set +e
 # shellcheck disable=SC2086
 gcc -Iinclude -Isrc -std=c11 -O1 -g \
     -Wall -Wextra -Wpedantic -Werror -Wshadow \
     -Wstrict-prototypes -Wmissing-prototypes \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
-    "$test_source" $sources -o "$build/sanitize-test"
-ASAN_OPTIONS=detect_leaks=1 "$build/sanitize-test" > "$build/sanitize.log"
+    "$test_source" $sources \
+    -o "$build/sanitize-test" >"$build/sanitize-compile.log" 2>&1
+status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+    printf 'ARM64_STORE_SANITIZER_COMPILE_FAILED exit=%s\n' "$status" >&2
+    cat "$build/sanitize-compile.log" >&2
+    exit "$status"
+fi
 
-for marker in \
-    'ARM64 TRANSLATION STORE TEST: PASS' \
-    'TRANSLATION STORE MISS PUBLISH: PASS' \
-    'TRANSLATION STORE CACHE HIT REUSE: PASS' \
-    'TRANSLATION STORE PREPUBLISH TRANSACTIONALITY: PASS' \
-    'TRANSLATION STORE POSTPUBLISH ROLLBACK: PASS' \
-    'TRANSLATION STORE ROLLBACK POISON CLEANUP: PASS' \
-    'NATIVE PUBLISHED BLOCK EXECUTION: NOT RUN'
-do
-    count=$(grep -Fxc "$marker" "$build/sanitize.log" || true)
-    [ "$count" -eq 1 ] || {
-        printf 'SANITIZED ARM64 TRANSLATION STORE MARKER MISMATCH marker=[%s] count=%s\n' \
-            "$marker" "$count" >&2
-        exit 1
-    }
-done
+stage run-sanitize
+set +e
+ASAN_OPTIONS=detect_leaks=1 "$build/sanitize-test" \
+    >"$build/sanitize.log" 2>&1
+status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+    printf 'ARM64_STORE_SANITIZER_TEST_FAILED exit=%s\n' "$status" >&2
+    cat "$build/sanitize.log" >&2
+    exit "$status"
+fi
+check_markers "$build/sanitize.log"
 
+stage clang-analyze
+set +e
 # shellcheck disable=SC2086
 clang --analyze -Iinclude -Isrc -std=c11 \
     -Wall -Wextra -Wpedantic -Werror -Wshadow \
     -Wstrict-prototypes -Wmissing-prototypes \
-    "$test_source" $sources
+    "$test_source" $sources >"$build/clang-analyze.log" 2>&1
+status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+    printf 'ARM64_STORE_CLANG_ANALYZE_FAILED exit=%s\n' "$status" >&2
+    cat "$build/clang-analyze.log" >&2
+    exit "$status"
+fi
 
 printf '%s\n' 'ARM64 TRANSLATION STORE FOCUSED VERIFY: PASS'
 printf '%s\n' 'CACHE MISS TRANSLATION PIPELINE: PASS'
