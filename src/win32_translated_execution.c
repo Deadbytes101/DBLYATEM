@@ -214,6 +214,24 @@ static db_win32_translated_execution_status db_execution_validate_aliases(
     return DB_WIN32_TRANSLATED_EXECUTION_OK;
 }
 
+static bool db_execution_guest_memory_aliases_output(
+    const db_linux_arm64_guest_memory *guest_memory,
+    db_win32_kernel32_state *kernel32_state,
+    db_x64_scalar_state *scalar_state,
+    db_win32_translated_execution_summary *summary)
+{
+    if (guest_memory == NULL) {
+        return false;
+    }
+
+    return db_execution_overlap(guest_memory, sizeof(*guest_memory),
+                                kernel32_state, sizeof(*kernel32_state)) ||
+           db_execution_overlap(guest_memory, sizeof(*guest_memory),
+                                scalar_state, sizeof(*scalar_state)) ||
+           db_execution_overlap(guest_memory, sizeof(*guest_memory),
+                                summary, sizeof(*summary));
+}
+
 static void db_execution_finish_common(
     const db_translated_terminal_exit *observed_exit,
     db_win32_translated_execution_summary *summary)
@@ -392,8 +410,9 @@ db_win32_translated_execution_status
 }
 
 db_win32_translated_execution_status
- db_win32_translated_execution_step(
+ db_win32_translated_execution_step_with_guest_memory(
     const db_arm64_published_block *published,
+    const db_linux_arm64_guest_memory *guest_memory,
     const void *gateway_buffer,
     size_t gateway_buffer_size,
     const db_iat_target *targets,
@@ -427,6 +446,17 @@ db_win32_translated_execution_status
         (signature_count != 0u && signatures == NULL) ||
         (guest_stack_size != 0u && guest_stack == NULL)) {
         return DB_WIN32_TRANSLATED_EXECUTION_NULL_ARGUMENT;
+    }
+
+    if (guest_memory != NULL &&
+        db_linux_arm64_guest_memory_validate(guest_memory) !=
+            DB_LINUX_ARM64_GUEST_RUNTIME_OK) {
+        return DB_WIN32_TRANSLATED_EXECUTION_BAD_GUEST_MEMORY;
+    }
+
+    if (db_execution_guest_memory_aliases_output(
+            guest_memory, kernel32_state, scalar_state, summary)) {
+        return DB_WIN32_TRANSLATED_EXECUTION_BUFFER_OVERLAP;
     }
 
     status = db_execution_validate_aliases(
@@ -469,6 +499,13 @@ db_win32_translated_execution_status
         return DB_WIN32_TRANSLATED_EXECUTION_BAD_PUBLISHED_BLOCK;
     }
 
+    if (guest_memory != NULL &&
+        db_linux_arm64_translation_context_bind_guest_memory(
+            &context, guest_memory) !=
+            DB_LINUX_ARM64_TRANSLATION_ENTRY_OK) {
+        return DB_WIN32_TRANSLATED_EXECUTION_BAD_GUEST_MEMORY;
+    }
+
     entry_status = db_linux_arm64_translation_enter(
         published->host_entry_address,
         &planned_scalar,
@@ -509,6 +546,47 @@ db_win32_translated_execution_status
     return DB_WIN32_TRANSLATED_EXECUTION_OK;
 }
 
+db_win32_translated_execution_status
+ db_win32_translated_execution_step(
+    const db_arm64_published_block *published,
+    const void *gateway_buffer,
+    size_t gateway_buffer_size,
+    const db_iat_target *targets,
+    size_t target_count,
+    uint64_t gateway_base,
+    uint64_t slot_size,
+    const db_gateway_dispatch_handler *handlers,
+    size_t handler_count,
+    const db_gateway_frame_signature *signatures,
+    size_t signature_count,
+    const void *guest_stack,
+    size_t guest_stack_size,
+    uint64_t guest_stack_base,
+    db_win32_kernel32_state *kernel32_state,
+    db_x64_scalar_state *scalar_state,
+    db_win32_translated_execution_summary *summary)
+{
+    return db_win32_translated_execution_step_with_guest_memory(
+        published,
+        NULL,
+        gateway_buffer,
+        gateway_buffer_size,
+        targets,
+        target_count,
+        gateway_base,
+        slot_size,
+        handlers,
+        handler_count,
+        signatures,
+        signature_count,
+        guest_stack,
+        guest_stack_size,
+        guest_stack_base,
+        kernel32_state,
+        scalar_state,
+        summary);
+}
+
 const char *db_win32_translated_execution_status_name(
     db_win32_translated_execution_status status)
 {
@@ -522,7 +600,8 @@ const char *db_win32_translated_execution_status_name(
         "bad observed terminal exit",
         "translated ARM64 entry failed",
         "translated Win32 gateway bridge failed",
-        "bad translated Win32 gateway outcome"
+        "bad translated Win32 gateway outcome",
+        "bad translated guest memory"
     };
 
     if ((size_t)status >= sizeof(names) / sizeof(names[0])) {
