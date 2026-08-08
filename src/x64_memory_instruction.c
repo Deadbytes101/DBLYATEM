@@ -187,19 +187,19 @@ db_x64_memory_instruction_status db_x64_memory_instruction_decode_one(
         planned.register_operand = planned.memory.register_operand;
     } else if (opcode_extension == UINT8_C(2)) {
         planned.kind = DB_X64_MEMORY_INSTRUCTION_CALL_RM64;
-        planned.register_operand = UINT8_C(0xff);
+        planned.register_operand = DB_X64_REGISTER_NONE;
     } else {
         planned.kind = DB_X64_MEMORY_INSTRUCTION_JMP_RM64;
-        planned.register_operand = UINT8_C(0xff);
+        planned.register_operand = DB_X64_REGISTER_NONE;
     }
 
     planned.rex = rex;
     planned.opcode = opcode;
     planned.instruction_length = planned.memory.instruction_length;
-    planned.opcode_extension = opcode_extension;
     planned.reserved[0] = 0u;
     planned.reserved[1] = 0u;
     planned.reserved[2] = 0u;
+    planned.reserved[3] = 0u;
 
     *instruction = planned;
     return DB_X64_MEMORY_INSTRUCTION_OK;
