@@ -24,9 +24,11 @@ bool db_x64_arm64_plan_group_pair_internal(
             consumer == DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS) ||
            (producer == DB_ARM64_SELECT_FORM_GUEST_ADDRESS &&
             (consumer == DB_ARM64_SELECT_LOAD_U64 ||
+             consumer == DB_ARM64_SELECT_LOAD_U64_TARGET ||
              consumer == DB_ARM64_SELECT_STORE_U64)) ||
            (producer == DB_ARM64_SELECT_PUSH_GUEST_U64 &&
-            consumer == DB_ARM64_SELECT_BRANCH_GUEST_DIRECT) ||
+            (consumer == DB_ARM64_SELECT_BRANCH_GUEST_DIRECT ||
+             consumer == DB_ARM64_SELECT_BRANCH_GUEST_TARGET)) ||
            (producer == DB_ARM64_SELECT_POP_GUEST_U64 &&
             consumer == DB_ARM64_SELECT_BRANCH_GUEST_TARGET) ||
            (producer == DB_ARM64_SELECT_TEST_GUEST_CONDITION &&
@@ -47,6 +49,7 @@ bool db_x64_arm64_plan_is_consumer_internal(db_arm64_select_opcode opcode)
 {
     return opcode == DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS ||
            opcode == DB_ARM64_SELECT_LOAD_U64 ||
+           opcode == DB_ARM64_SELECT_LOAD_U64_TARGET ||
            opcode == DB_ARM64_SELECT_STORE_U64 ||
            opcode == DB_ARM64_SELECT_BRANCH_GUEST_TARGET ||
            opcode == DB_ARM64_SELECT_BRANCH_IF_TRUE;
@@ -73,6 +76,7 @@ uint32_t db_x64_arm64_plan_expansion_internal(
     case DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS: return 1u;
     case DB_ARM64_SELECT_FORM_GUEST_ADDRESS: return 1u;
     case DB_ARM64_SELECT_LOAD_U64: return 2u;
+    case DB_ARM64_SELECT_LOAD_U64_TARGET: return 1u;
     case DB_ARM64_SELECT_STORE_U64: return 2u;
     case DB_ARM64_SELECT_PUSH_GUEST_U64: return chunks(record->value) + 1u;
     case DB_ARM64_SELECT_POP_GUEST_U64:
