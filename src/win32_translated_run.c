@@ -318,6 +318,9 @@ db_win32_translated_run_status db_win32_translated_run_with_executor(
         completed.last_cache_status = (uint32_t)cache_status;
 
         if (cache_status == DB_ARM64_BLOCK_CACHE_NOT_FOUND) {
+            (void)memset(&completed.last_lookup,
+                         0,
+                         sizeof(completed.last_lookup));
             completed.final_rip = planned_scalar.rip;
             completed.stop_reason =
                 (uint32_t)DB_WIN32_TRANSLATED_RUN_STOP_CACHE_MISS;
