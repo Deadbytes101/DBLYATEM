@@ -100,7 +100,6 @@ static bool db_x64_ir_lower_memory_reserved_zero(
     return instruction->reserved[0] == 0u &&
            instruction->reserved[1] == 0u &&
            instruction->reserved[2] == 0u &&
-           instruction->reserved[3] == 0u &&
            instruction->memory.reserved[0] == 0u &&
            instruction->memory.reserved[1] == 0u &&
            instruction->memory.reserved[2] == 0u &&
@@ -250,20 +249,19 @@ static bool db_x64_ir_lower_address_valid(
     return false;
 }
 
-static bool db_x64_ir_lower_memory_valid(
+static bool db_x64_ir_lower_memory_common_valid(
     const db_x64_memory_instruction *instruction)
 {
     const db_x64_memory_operand *memory = &instruction->memory;
     uint8_t mod;
 
     if (!db_x64_ir_lower_memory_reserved_zero(instruction) ||
-        instruction->instruction_length < UINT8_C(3) ||
+        instruction->instruction_length < UINT8_C(2) ||
         instruction->instruction_length >
             DB_X64_IR_LOWER_MAX_INSTRUCTION_LENGTH ||
-        instruction->rex < UINT8_C(0x48) ||
-        instruction->rex > UINT8_C(0x4f) ||
-        !db_x64_ir_lower_register(instruction->register_operand) ||
-        memory->register_operand != instruction->register_operand ||
+        (instruction->rex != 0u &&
+         (instruction->rex < UINT8_C(0x40) ||
+          instruction->rex > UINT8_C(0x4f))) ||
         memory->instruction_length != instruction->instruction_length ||
         memory->encoded_length == 0u ||
         memory->encoded_length >= instruction->instruction_length ||
@@ -275,21 +273,56 @@ static bool db_x64_ir_lower_memory_valid(
     }
 
     mod = (uint8_t)(memory->modrm >> 6u);
-    if (mod == UINT8_C(3)) {
+    return mod != UINT8_C(3);
+}
+
+static bool db_x64_ir_lower_memory_valid(
+    const db_x64_memory_instruction *instruction)
+{
+    const db_x64_memory_operand *memory = &instruction->memory;
+
+    if (!db_x64_ir_lower_memory_common_valid(instruction)) {
         return false;
     }
 
     switch (instruction->kind) {
     case DB_X64_MEMORY_INSTRUCTION_LOAD_R64:
-        return instruction->opcode == UINT8_C(0x8b);
+        return instruction->instruction_length >= UINT8_C(3) &&
+               instruction->rex >= UINT8_C(0x48) &&
+               instruction->rex <= UINT8_C(0x4f) &&
+               instruction->opcode == UINT8_C(0x8b) &&
+               instruction->opcode_extension == 0u &&
+               db_x64_ir_lower_register(instruction->register_operand) &&
+               memory->register_operand == instruction->register_operand;
+
     case DB_X64_MEMORY_INSTRUCTION_STORE_R64:
-        return instruction->opcode == UINT8_C(0x89);
+        return instruction->instruction_length >= UINT8_C(3) &&
+               instruction->rex >= UINT8_C(0x48) &&
+               instruction->rex <= UINT8_C(0x4f) &&
+               instruction->opcode == UINT8_C(0x89) &&
+               instruction->opcode_extension == 0u &&
+               db_x64_ir_lower_register(instruction->register_operand) &&
+               memory->register_operand == instruction->register_operand;
+
+    case DB_X64_MEMORY_INSTRUCTION_CALL_RM64:
+        return instruction->opcode == UINT8_C(0xff) &&
+               instruction->opcode_extension == UINT8_C(2) &&
+               instruction->register_operand == DB_X64_REGISTER_NONE &&
+               memory->register_operand == UINT8_C(2) &&
+               (instruction->rex & UINT8_C(0x04)) == 0u;
+
+    case DB_X64_MEMORY_INSTRUCTION_JMP_RM64:
+        return instruction->opcode == UINT8_C(0xff) &&
+               instruction->opcode_extension == UINT8_C(4) &&
+               instruction->register_operand == DB_X64_REGISTER_NONE &&
+               memory->register_operand == UINT8_C(4) &&
+               (instruction->rex & UINT8_C(0x04)) == 0u;
     }
 
     return false;
 }
 
-static db_x64_block_control db_x64_ir_lower_expected_control(
+static db_x64_block_control db_x64_ir_lower_expected_control_scalar(
     const db_x64_instruction *instruction)
 {
     switch (instruction->kind) {
@@ -313,6 +346,22 @@ static db_x64_block_control db_x64_ir_lower_expected_control(
     case DB_X64_INSTRUCTION_XOR_R32_R32:
     case DB_X64_INSTRUCTION_XOR_R64_R64:
         return DB_X64_BLOCK_CONTROL_LINEAR;
+    }
+
+    return DB_X64_BLOCK_CONTROL_TRAP;
+}
+
+static db_x64_block_control db_x64_ir_lower_expected_control_memory(
+    const db_x64_memory_instruction *instruction)
+{
+    switch (instruction->kind) {
+    case DB_X64_MEMORY_INSTRUCTION_LOAD_R64:
+    case DB_X64_MEMORY_INSTRUCTION_STORE_R64:
+        return DB_X64_BLOCK_CONTROL_LINEAR;
+    case DB_X64_MEMORY_INSTRUCTION_CALL_RM64:
+        return DB_X64_BLOCK_CONTROL_INDIRECT_CALL;
+    case DB_X64_MEMORY_INSTRUCTION_JMP_RM64:
+        return DB_X64_BLOCK_CONTROL_INDIRECT_JUMP;
     }
 
     return DB_X64_BLOCK_CONTROL_TRAP;
@@ -358,7 +407,7 @@ db_x64_ir_lower_status db_x64_ir_lower_validate_record_internal(
             !db_x64_ir_lower_zero(&record->memory,
                                   sizeof(record->memory)) ||
             record->control !=
-                db_x64_ir_lower_expected_control(&record->scalar)) {
+                db_x64_ir_lower_expected_control_scalar(&record->scalar)) {
             return DB_X64_IR_LOWER_BAD_RECORD;
         }
         length = record->scalar.length;
@@ -366,7 +415,8 @@ db_x64_ir_lower_status db_x64_ir_lower_validate_record_internal(
         if (!db_x64_ir_lower_memory_valid(&record->memory) ||
             !db_x64_ir_lower_zero(&record->scalar,
                                   sizeof(record->scalar)) ||
-            record->control != DB_X64_BLOCK_CONTROL_LINEAR) {
+            record->control !=
+                db_x64_ir_lower_expected_control_memory(&record->memory)) {
             return DB_X64_IR_LOWER_BAD_RECORD;
         }
         length = record->memory.instruction_length;
