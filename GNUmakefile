@@ -285,3 +285,58 @@ $(BUILD)/dblyatem: src/arm64_block_cache.c \
                    src/win32_translated_run_internal.h \
                    include/dblyat/arm64_block_cache.h \
                    include/dblyat/win32_translated_run.h
+
+CORE += src/arm64_translation_store.c \
+        src/arm64_published_block.c \
+        src/linux_arm64_wx_provider.c \
+        src/x64_block.c \
+        src/x64_decode.c \
+        src/x64_memory_instruction.c \
+        src/x64_memory_decode.c \
+        src/ir.c \
+        src/x64_ir_lower.c \
+        src/x64_ir_lower_validate.c \
+        src/x64_ir_lower_emit.c \
+        src/arm64_select.c \
+        src/arm64_select_validate.c \
+        src/arm64_select_emit.c \
+        src/x64_arm64_plan.c \
+        src/x64_arm64_plan_validate.c \
+        src/x64_arm64_plan_group.c \
+        src/x64_arm64_plan_emit.c \
+        src/x64_arm64_encode.c \
+        src/x64_arm64_relocate.c \
+        src/x64_arm64_relocate_validate.c \
+        src/x64_arm64_relocate_emit.c \
+        src/arm64_code_image.c \
+        src/win32_translated_demand_run.c
+HEADERS += include/dblyat/arm64_translation_store.h \
+           include/dblyat/win32_translated_demand_run.h
+
+$(BUILD)/dblyatem: src/arm64_translation_store.c \
+                   src/arm64_published_block.c \
+                   src/linux_arm64_wx_provider.c \
+                   src/x64_block.c \
+                   src/x64_decode.c \
+                   src/x64_memory_instruction.c \
+                   src/x64_memory_decode.c \
+                   src/ir.c \
+                   src/x64_ir_lower.c \
+                   src/x64_ir_lower_validate.c \
+                   src/x64_ir_lower_emit.c \
+                   src/arm64_select.c \
+                   src/arm64_select_validate.c \
+                   src/arm64_select_emit.c \
+                   src/x64_arm64_plan.c \
+                   src/x64_arm64_plan_validate.c \
+                   src/x64_arm64_plan_group.c \
+                   src/x64_arm64_plan_emit.c \
+                   src/x64_arm64_encode.c \
+                   src/x64_arm64_relocate.c \
+                   src/x64_arm64_relocate_validate.c \
+                   src/x64_arm64_relocate_emit.c \
+                   src/arm64_code_image.c \
+                   src/win32_translated_demand_run.c \
+                   src/win32_translated_demand_run_internal.h \
+                   include/dblyat/arm64_translation_store.h \
+                   include/dblyat/win32_translated_demand_run.h
