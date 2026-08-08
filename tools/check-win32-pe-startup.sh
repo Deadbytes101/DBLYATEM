@@ -76,6 +76,21 @@ do
         }
 done
 
+printf '%s\n' 'WIN32_PE_STARTUP_STAGE=production-link-contract'
+for requirement in \
+    'src/win32_provider_tables.c' \
+    'src/win32_pe_startup.c' \
+    '$(BUILD)/win32_provider_tables_test' \
+    '$(BUILD)/win32_pe_startup_test' \
+    'test: win32_provider_tables_verify win32_pe_startup_verify'
+do
+    grep -F "$requirement" GNUmakefile >/dev/null || {
+        printf 'WIN32_PE_STARTUP_PRODUCTION_LINK_MISSING token=%s\n' \
+            "$requirement" >&2
+        exit 1
+    }
+done
+
 if grep -E 'KERNEL32|GetLastError|SetLastError|ExitProcess|GetCurrentProcessId|GetCurrentThreadId' \
     src/win32_pe_startup.c >/dev/null
 then
@@ -236,6 +251,7 @@ if [ "$status" -ne 0 ]; then
 fi
 
 printf '%s\n' 'WIN32 PE STARTUP FOCUSED VERIFY: PASS'
+printf '%s\n' 'PRODUCTION PE STARTUP LINK CONTRACT: PASS'
 printf '%s\n' 'PROVIDER CATALOG ADAPTER: PASS'
 printf '%s\n' 'PE STAGING TRANSACTION: PASS'
 printf '%s\n' 'RELOC IMPORT DBGT IAT COMPOSITION: PASS'
