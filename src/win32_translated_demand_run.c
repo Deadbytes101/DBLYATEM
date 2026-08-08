@@ -64,6 +64,66 @@ static bool db_demand_scalar_valid(const db_x64_scalar_state *state)
            (state->rflags & DB_X64_RFLAGS_FIXED_ONE) != 0u;
 }
 
+static bool db_demand_code_view_shape_valid(const db_x64_code_view *code)
+{
+    uint64_t last;
+
+    if (code == NULL || code->bytes == NULL || code->size == 0u ||
+        !db_demand_canonical(code->guest_base) ||
+        !db_demand_zero_bytes(code->reserved, sizeof(code->reserved)) ||
+        code->size - 1u > (size_t)(UINT64_MAX - code->guest_base)) {
+        return false;
+    }
+
+    last = code->guest_base + (uint64_t)(code->size - 1u);
+    return db_demand_canonical(last);
+}
+
+static bool db_demand_code_view_contains(const db_x64_code_view *code,
+                                         uint64_t rip)
+{
+    uint64_t delta;
+
+    if (!db_demand_code_view_shape_valid(code) ||
+        !db_demand_canonical(rip) || rip < code->guest_base) {
+        return false;
+    }
+
+    delta = rip - code->guest_base;
+    return delta <= (uint64_t)SIZE_MAX && (size_t)delta < code->size;
+}
+
+static bool db_demand_guest_memory_requested(
+    const db_win32_translated_demand_run_config *config)
+{
+    return config->image_memory != NULL ||
+           config->image_page_plan != NULL ||
+           config->image_page_count != 0u ||
+           config->image_page_size != 0u;
+}
+
+static bool db_demand_guest_memory_config_valid(
+    const db_win32_translated_demand_run_config *config)
+{
+    const db_x64_code_view *code = config->translation->code;
+
+    if (!db_demand_guest_memory_requested(config)) {
+        return config->image_memory == NULL &&
+               config->image_page_plan == NULL &&
+               config->image_page_count == 0u &&
+               config->image_page_size == 0u;
+    }
+
+    return config->image_memory != NULL &&
+           config->image_page_plan != NULL &&
+           config->image_page_count != 0u &&
+           config->image_page_size >= 4096u &&
+           (config->image_page_size & (config->image_page_size - 1u)) == 0u &&
+           code->bytes == (const uint8_t *)config->image_memory &&
+           config->guest_stack != NULL &&
+           config->guest_stack_size != 0u;
+}
+
 static bool db_demand_handle_empty(const db_linux_arm64_wx_handle *handle)
 {
     return handle->mapping == NULL &&
@@ -159,7 +219,8 @@ static bool db_demand_workspace_shape_valid(
 static bool db_demand_translation_shape_valid(
     const db_arm64_translation_store_config *translation)
 {
-    return translation != NULL && translation->code != NULL &&
+    return translation != NULL &&
+           db_demand_code_view_shape_valid(translation->code) &&
            translation->helper_targets != NULL &&
            translation->wx_platform != NULL &&
            translation->reserve_code_base != NULL &&
@@ -188,7 +249,8 @@ static bool db_demand_config_valid(
            (config->target_count == 0u || config->targets != NULL) &&
            (config->handler_count == 0u || config->handlers != NULL) &&
            (config->signature_count == 0u || config->signatures != NULL) &&
-           (config->guest_stack_size == 0u || config->guest_stack != NULL);
+           (config->guest_stack_size == 0u || config->guest_stack != NULL) &&
+           db_demand_guest_memory_config_valid(config);
 }
 
 static bool db_demand_regions_disjoint(
@@ -221,7 +283,7 @@ static db_win32_translated_demand_run_status db_demand_validate_aliases(
     const db_arm64_translation_workspace *workspace = config->workspace;
     const db_arm64_translation_store_config *translation = config->translation;
     struct db_demand_region outputs[3];
-    struct db_demand_region inputs[22];
+    struct db_demand_region inputs[24];
     size_t slot_bytes;
     size_t handle_bytes;
     size_t block_bytes;
@@ -235,6 +297,7 @@ static db_win32_translated_demand_run_status db_demand_validate_aliases(
     size_t target_bytes;
     size_t handler_bytes;
     size_t signature_bytes;
+    size_t page_plan_bytes;
     size_t input_count = 0u;
     size_t out_index;
     size_t in_index;
@@ -277,7 +340,10 @@ static db_win32_translated_demand_run_status db_demand_validate_aliases(
                             &handler_bytes) ||
         !db_demand_multiply(config->signature_count,
                             sizeof(*config->signatures),
-                            &signature_bytes)) {
+                            &signature_bytes) ||
+        !db_demand_multiply(config->image_page_count,
+                            sizeof(*config->image_page_plan),
+                            &page_plan_bytes)) {
         return DB_WIN32_TRANSLATED_DEMAND_RUN_COUNT_OVERFLOW;
     }
 
@@ -313,6 +379,11 @@ static db_win32_translated_demand_run_status db_demand_validate_aliases(
     DB_DEMAND_INPUT(workspace->output_words, output_word_bytes);
     DB_DEMAND_INPUT(workspace->resolutions, resolution_bytes);
     DB_DEMAND_INPUT(workspace->image_bytes, workspace->image_capacity);
+    DB_DEMAND_INPUT(config->image_memory,
+                    db_demand_guest_memory_requested(config)
+                        ? translation->code->size
+                        : 0u);
+    DB_DEMAND_INPUT(config->image_page_plan, page_plan_bytes);
     DB_DEMAND_INPUT(config->gateway_buffer, config->gateway_buffer_size);
     DB_DEMAND_INPUT(config->targets, target_bytes);
     DB_DEMAND_INPUT(config->handlers, handler_bytes);
@@ -353,13 +424,51 @@ static db_win32_translated_demand_run_status db_demand_validate_aliases(
     return DB_WIN32_TRANSLATED_DEMAND_RUN_OK;
 }
 
+static db_win32_translated_demand_run_status db_demand_build_guest_memory(
+    const db_win32_translated_demand_run_config *config,
+    db_linux_arm64_guest_memory *storage,
+    const db_linux_arm64_guest_memory **guest_memory)
+{
+    db_linux_arm64_guest_runtime_status status;
+
+    *guest_memory = NULL;
+    (void)memset(storage, 0, sizeof(*storage));
+
+    if (!db_demand_guest_memory_requested(config)) {
+        return DB_WIN32_TRANSLATED_DEMAND_RUN_OK;
+    }
+
+    status = db_linux_arm64_guest_memory_init(
+        storage,
+        config->image_memory,
+        config->translation->code->size,
+        config->image_page_plan,
+        config->image_page_count,
+        config->image_page_size,
+        config->translation->code->guest_base,
+        config->guest_stack,
+        config->guest_stack_size,
+        config->guest_stack_base,
+        config->gateway_buffer,
+        config->gateway_buffer_size,
+        config->gateway_base);
+    if (status != DB_LINUX_ARM64_GUEST_RUNTIME_OK) {
+        return DB_WIN32_TRANSLATED_DEMAND_RUN_BAD_GUEST_MEMORY;
+    }
+
+    *guest_memory = storage;
+    return DB_WIN32_TRANSLATED_DEMAND_RUN_OK;
+}
+
 static void db_demand_build_run_config(
     const db_win32_translated_demand_run_config *config,
+    const db_linux_arm64_guest_memory *guest_memory,
     uint32_t remaining_budget,
     db_win32_translated_run_config *run)
 {
     (void)memset(run, 0, sizeof(*run));
     run->cache = &config->store->cache;
+    run->guest_memory = guest_memory;
     run->gateway_buffer = config->gateway_buffer;
     run->targets = config->targets;
     run->handlers = config->handlers;
@@ -377,6 +486,38 @@ static void db_demand_build_run_config(
     run->guest_stack_base = config->guest_stack_base;
     run->block_budget = remaining_budget;
     run->format_version = DB_WIN32_TRANSLATED_RUN_FORMAT_VERSION;
+}
+
+static db_win32_translated_demand_run_status
+ db_demand_select_translation(
+    const db_win32_translated_demand_run_config *config,
+    uint64_t rip,
+    db_arm64_translation_store_config *selected,
+    db_x64_code_view *gateway_code,
+    db_win32_translated_demand_code_region *region)
+{
+    *selected = *config->translation;
+    (void)memset(gateway_code, 0, sizeof(*gateway_code));
+    *region = DB_WIN32_TRANSLATED_DEMAND_CODE_NONE;
+
+    if (db_demand_code_view_contains(config->translation->code, rip)) {
+        *region = DB_WIN32_TRANSLATED_DEMAND_CODE_IMAGE;
+        return DB_WIN32_TRANSLATED_DEMAND_RUN_OK;
+    }
+
+    if (config->gateway_buffer_size != 0u) {
+        gateway_code->bytes = (const uint8_t *)config->gateway_buffer;
+        gateway_code->size = config->gateway_buffer_size;
+        gateway_code->guest_base = config->gateway_base;
+
+        if (db_demand_code_view_contains(gateway_code, rip)) {
+            selected->code = gateway_code;
+            *region = DB_WIN32_TRANSLATED_DEMAND_CODE_GATEWAY;
+            return DB_WIN32_TRANSLATED_DEMAND_RUN_OK;
+        }
+    }
+
+    return DB_WIN32_TRANSLATED_DEMAND_RUN_CODE_NOT_MAPPED;
 }
 
 static bool db_demand_run_summary_valid(
@@ -481,6 +622,8 @@ static db_win32_translated_demand_run_status db_demand_run_core(
     db_x64_scalar_state planned_scalar;
     db_win32_translated_demand_run_summary completed;
     db_win32_translated_demand_run_status alias_status;
+    db_linux_arm64_guest_memory guest_memory_storage;
+    const db_linux_arm64_guest_memory *guest_memory;
 
     if (config == NULL || kernel32_state == NULL || scalar_state == NULL ||
         summary == NULL) {
@@ -502,6 +645,12 @@ static db_win32_translated_demand_run_status db_demand_run_core(
         return alias_status;
     }
 
+    alias_status = db_demand_build_guest_memory(
+        config, &guest_memory_storage, &guest_memory);
+    if (alias_status != DB_WIN32_TRANSLATED_DEMAND_RUN_OK) {
+        return alias_status;
+    }
+
     planned_kernel32 = *kernel32_state;
     planned_scalar = *scalar_state;
     (void)memset(&completed, 0, sizeof(completed));
@@ -514,6 +663,9 @@ static db_win32_translated_demand_run_status db_demand_run_core(
         (uint32_t)DB_WIN32_TRANSLATED_DEMAND_RUN_STOP_BLOCK_BUDGET;
     completed.last_run_status = (uint32_t)DB_WIN32_TRANSLATED_RUN_OK;
     completed.last_store_status = (uint32_t)DB_ARM64_TRANSLATION_STORE_OK;
+    completed.guest_memory_bound = guest_memory != NULL ? UINT32_C(1) : 0u;
+    completed.last_fill_code_region =
+        (uint32_t)DB_WIN32_TRANSLATED_DEMAND_CODE_NONE;
     completed.format_version = DB_WIN32_TRANSLATED_DEMAND_RUN_FORMAT_VERSION;
 
     while (completed.completed_blocks < config->block_budget) {
@@ -526,7 +678,8 @@ static db_win32_translated_demand_run_status db_demand_run_core(
         uint32_t new_lookup_total;
         uint64_t segment_source_rip = planned_scalar.rip;
 
-        db_demand_build_run_config(config, remaining_budget, &run);
+        db_demand_build_run_config(
+            config, guest_memory, remaining_budget, &run);
         (void)memset(&run_summary, 0, sizeof(run_summary));
 
         if (executor == NULL) {
@@ -574,17 +727,31 @@ static db_win32_translated_demand_run_status db_demand_run_core(
             db_arm64_published_block published;
             db_arm64_translation_store_summary fill_summary;
             db_arm64_translation_store_status store_status;
+            db_arm64_translation_store_config selected_translation;
+            db_x64_code_view gateway_code;
+            db_win32_translated_demand_code_region region;
+            db_win32_translated_demand_run_status select_status;
             uint64_t miss_rip = planned_scalar.rip;
 
             if (completed.fill_count >= config->block_budget) {
                 return DB_WIN32_TRANSLATED_DEMAND_RUN_FILL_STALLED;
             }
 
+            select_status = db_demand_select_translation(
+                config,
+                miss_rip,
+                &selected_translation,
+                &gateway_code,
+                &region);
+            if (select_status != DB_WIN32_TRANSLATED_DEMAND_RUN_OK) {
+                return select_status;
+            }
+
             (void)memset(&published, 0, sizeof(published));
             (void)memset(&fill_summary, 0, sizeof(fill_summary));
             store_status = db_arm64_translation_store_fill(
                 config->store,
-                config->translation,
+                &selected_translation,
                 config->workspace,
                 miss_rip,
                 &published,
@@ -592,7 +759,7 @@ static db_win32_translated_demand_run_status db_demand_run_core(
             if (store_status != DB_ARM64_TRANSLATION_STORE_OK) {
                 return DB_WIN32_TRANSLATED_DEMAND_RUN_STORE_FAILED;
             }
-            if (!db_demand_fill_summary_valid(config->translation,
+            if (!db_demand_fill_summary_valid(&selected_translation,
                                                miss_rip,
                                                &published,
                                                &fill_summary) ||
@@ -608,6 +775,14 @@ static db_win32_translated_demand_run_status db_demand_run_core(
             } else {
                 ++completed.cache_hit_fill_count;
             }
+            if (region == DB_WIN32_TRANSLATED_DEMAND_CODE_IMAGE) {
+                ++completed.image_fill_count;
+            } else if (region == DB_WIN32_TRANSLATED_DEMAND_CODE_GATEWAY) {
+                ++completed.gateway_fill_count;
+            } else {
+                return DB_WIN32_TRANSLATED_DEMAND_RUN_BAD_STORE_OUTCOME;
+            }
+            completed.last_fill_code_region = (uint32_t)region;
             completed.last_fill = fill_summary;
             completed.last_store_status = (uint32_t)store_status;
             break;
@@ -705,7 +880,9 @@ const char *db_win32_translated_demand_run_status_name(
         "bad cache-only run outcome",
         "translation store failed",
         "bad translation store outcome",
-        "cache-miss fill stalled"
+        "cache-miss fill stalled",
+        "bad guest memory composition",
+        "guest code RIP not mapped"
     };
 
     if ((size_t)status >= sizeof(names) / sizeof(names[0])) {
@@ -727,4 +904,19 @@ const char *db_win32_translated_demand_run_stop_reason_name(
         return "unknown translated Win32 demand-run stop reason";
     }
     return names[(size_t)reason];
+}
+
+const char *db_win32_translated_demand_code_region_name(
+    db_win32_translated_demand_code_region region)
+{
+    static const char *const names[] = {
+        "none",
+        "image",
+        "gateway"
+    };
+
+    if ((size_t)region >= sizeof(names) / sizeof(names[0])) {
+        return "unknown translated Win32 demand code region";
+    }
+    return names[(size_t)region];
 }
