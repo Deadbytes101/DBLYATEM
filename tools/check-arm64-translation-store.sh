@@ -35,68 +35,99 @@ src/x64_arm64_relocate_emit.c
 src/arm64_code_image.c
 '
 
-stage()
-{
-    printf 'ARM64_STORE_STAGE=%s\n' "$1"
-}
+rm -rf "$build"
+mkdir -p "$build"
+cd "$root"
 
-require_file()
-{
-    path=$1
-    [ -f "$path" ] || {
-        printf 'ARM64_STORE_REQUIRED_FILE_MISSING=%s\n' "$path" >&2
+printf '%s\n' 'ARM64_STORE_STAGE=files'
+for required in "$store_header" "$store_source" "$test_source"
+do
+    [ -f "$required" ] || {
+        printf 'ARM64_STORE_REQUIRED_FILE_MISSING path=%s\n' "$required" >&2
         exit 1
     }
-}
+done
 
-require_fixed()
-{
-    pattern=$1
-    path=$2
-    grep -F "$pattern" "$path" >/dev/null || {
-        printf 'ARM64_STORE_STATIC_REQUIREMENT_MISSING file=%s pattern=[%s]\n' \
-            "$path" "$pattern" >&2
+printf '%s\n' 'ARM64_STORE_STAGE=static-requirements'
+for requirement in \
+    'db_arm64_block_cache_lookup' \
+    'db_x64_block_build' \
+    'db_x64_ir_lower_block' \
+    'db_arm64_select_block' \
+    'db_x64_arm64_plan_block' \
+    'db_x64_arm64_encode_block' \
+    'db_x64_arm64_resolve_helpers' \
+    'db_arm64_code_image_build' \
+    'db_linux_arm64_wx_publish' \
+    'db_arm64_published_block_build' \
+    'db_arm64_published_block_bind_terminal' \
+    'db_arm64_block_cache_insert' \
+    'db_linux_arm64_wx_release' \
+    'DB_ARM64_TRANSLATION_STORE_POISONED'
+do
+    grep -F "$requirement" "$store_source" >/dev/null || {
+        printf 'ARM64_STORE_STATIC_REQUIREMENT_MISSING token=%s\n' \
+            "$requirement" >&2
         exit 1
     }
+done
+
+grep -F 'reserve_code_base' "$store_header" >/dev/null || {
+    printf '%s\n' \
+        'ARM64_STORE_STATIC_REQUIREMENT_MISSING token=reserve_code_base' >&2
+    exit 1
 }
 
-run_compiler_test()
-{
-    compiler=$1
+printf '%s\n' 'ARM64_STORE_STAGE=boundaries'
+if grep -E 'win32|kernel32|gateway' "$store_source" "$store_header" >/dev/null
+then
+    printf '%s\n' 'ARM64 TRANSLATION STORE CONTAMINATED WITH WIN32/GATEWAY SEMANTICS' >&2
+    exit 1
+fi
+
+if grep -E '(^|[^[:alnum:]_])(malloc|calloc|realloc|free|mmap|mprotect|munmap|VirtualAlloc|VirtualProtect|pthread_|atomic_|__atomic|__sync)([^[:alnum:]_]|$)' \
+    "$store_source" "$store_header" >/dev/null
+then
+    printf '%s\n' 'ARM64 TRANSLATION STORE CROSSED ALLOCATION, MAPPING, OR CONCURRENCY BOUNDARY' >&2
+    exit 1
+fi
+
+for compiler in gcc clang
+do
     binary="$build/$compiler-test"
     compile_log="$build/$compiler-compile.log"
     run_log="$build/$compiler.log"
 
-    stage "compile-$compiler"
+    printf 'ARM64_STORE_STAGE=compile-%s\n' "$compiler"
     set +e
     # shellcheck disable=SC2086
-    "$compiler" $common "$test_source" $sources \
-        -o "$binary" >"$compile_log" 2>&1
-    status=$?
+    "$compiler" $common "$test_source" $sources -o "$binary" \
+        > "$compile_log" 2>&1
+    compile_status=$?
     set -e
-    if [ "$status" -ne 0 ]; then
+    if [ "$compile_status" -ne 0 ]; then
         printf 'ARM64_STORE_COMPILE_FAILED compiler=%s exit=%s\n' \
-            "$compiler" "$status" >&2
+            "$compiler" "$compile_status" >&2
         cat "$compile_log" >&2
-        exit "$status"
+        exit "$compile_status"
     fi
 
-    stage "run-$compiler"
+    printf 'ARM64_STORE_STAGE=run-%s\n' "$compiler"
     set +e
-    "$binary" >"$run_log" 2>&1
-    status=$?
+    "$binary" > "$run_log" 2>&1
+    run_status=$?
     set -e
-    if [ "$status" -ne 0 ]; then
+    if [ "$run_status" -ne 0 ]; then
         printf 'ARM64_STORE_TEST_FAILED compiler=%s exit=%s\n' \
-            "$compiler" "$status" >&2
+            "$compiler" "$run_status" >&2
         cat "$run_log" >&2
-        exit "$status"
+        exit "$run_status"
     fi
-}
+done
 
-check_markers()
-{
-    log=$1
+printf '%s\n' 'ARM64_STORE_STAGE=marker-validation'
+for log in "$build/gcc.log" "$build/clang.log"
+do
     for marker in \
         'ARM64 TRANSLATION STORE TEST: PASS' \
         'TRANSLATION STORE MISS PUBLISH: PASS' \
@@ -114,100 +145,72 @@ check_markers()
             exit 1
         }
     done
-}
-
-rm -rf "$build"
-mkdir -p "$build"
-cd "$root"
-
-stage files
-require_file "$store_header"
-require_file "$store_source"
-require_file "$test_source"
-
-stage static-requirements
-require_fixed 'db_arm64_block_cache_lookup' "$store_source"
-require_fixed 'db_x64_block_build' "$store_source"
-require_fixed 'db_x64_ir_lower_block' "$store_source"
-require_fixed 'db_arm64_select_block' "$store_source"
-require_fixed 'db_x64_arm64_plan_block' "$store_source"
-require_fixed 'db_x64_arm64_encode_block' "$store_source"
-require_fixed 'db_x64_arm64_resolve_helpers' "$store_source"
-require_fixed 'db_arm64_code_image_build' "$store_source"
-require_fixed 'db_linux_arm64_wx_publish' "$store_source"
-require_fixed 'db_arm64_published_block_build' "$store_source"
-require_fixed 'db_arm64_published_block_bind_terminal' "$store_source"
-require_fixed 'db_arm64_block_cache_insert' "$store_source"
-require_fixed 'db_linux_arm64_wx_release' "$store_source"
-require_fixed 'DB_ARM64_TRANSLATION_STORE_POISONED' "$store_source"
-require_fixed 'reserve_code_base' "$store_header"
-
-stage boundaries
-if grep -E 'win32|kernel32|gateway' "$store_source" "$store_header" >/dev/null
-then
-    printf '%s\n' 'ARM64 TRANSLATION STORE CONTAMINATED WITH WIN32/GATEWAY SEMANTICS' >&2
-    exit 1
-fi
-
-if grep -E '(^|[^[:alnum:]_])(malloc|calloc|realloc|free|mmap|mprotect|munmap|VirtualAlloc|VirtualProtect|pthread_|atomic_|__atomic|__sync)([^[:alnum:]_]|$)' \
-    "$store_source" "$store_header" >/dev/null
-then
-    printf '%s\n' 'ARM64 TRANSLATION STORE CROSSED ALLOCATION, MAPPING, OR CONCURRENCY BOUNDARY' >&2
-    exit 1
-fi
-
-for compiler in gcc clang
-do
-    run_compiler_test "$compiler"
 done
 
-stage marker-validation
-check_markers "$build/gcc.log"
-check_markers "$build/clang.log"
-
-stage compile-sanitize
+printf '%s\n' 'ARM64_STORE_STAGE=compile-sanitize'
 set +e
 # shellcheck disable=SC2086
 gcc -Iinclude -Isrc -std=c11 -O1 -g \
     -Wall -Wextra -Wpedantic -Werror -Wshadow \
     -Wstrict-prototypes -Wmissing-prototypes \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
-    "$test_source" $sources \
-    -o "$build/sanitize-test" >"$build/sanitize-compile.log" 2>&1
-status=$?
+    "$test_source" $sources -o "$build/sanitize-test" \
+    > "$build/sanitize-compile.log" 2>&1
+sanitize_compile_status=$?
 set -e
-if [ "$status" -ne 0 ]; then
-    printf 'ARM64_STORE_SANITIZER_COMPILE_FAILED exit=%s\n' "$status" >&2
+if [ "$sanitize_compile_status" -ne 0 ]; then
+    printf 'ARM64_STORE_SANITIZER_COMPILE_FAILED exit=%s\n' \
+        "$sanitize_compile_status" >&2
     cat "$build/sanitize-compile.log" >&2
-    exit "$status"
+    exit "$sanitize_compile_status"
 fi
 
-stage run-sanitize
+printf '%s\n' 'ARM64_STORE_STAGE=run-sanitize'
 set +e
 ASAN_OPTIONS=detect_leaks=1 "$build/sanitize-test" \
-    >"$build/sanitize.log" 2>&1
-status=$?
+    > "$build/sanitize.log" 2>&1
+sanitize_status=$?
 set -e
-if [ "$status" -ne 0 ]; then
-    printf 'ARM64_STORE_SANITIZER_TEST_FAILED exit=%s\n' "$status" >&2
+if [ "$sanitize_status" -ne 0 ]; then
+    printf 'ARM64_STORE_SANITIZER_TEST_FAILED exit=%s\n' \
+        "$sanitize_status" >&2
     cat "$build/sanitize.log" >&2
-    exit "$status"
+    exit "$sanitize_status"
 fi
-check_markers "$build/sanitize.log"
 
-stage clang-analyze
+for marker in \
+    'ARM64 TRANSLATION STORE TEST: PASS' \
+    'TRANSLATION STORE MISS PUBLISH: PASS' \
+    'TRANSLATION STORE CACHE HIT REUSE: PASS' \
+    'TRANSLATION STORE PREPUBLISH TRANSACTIONALITY: PASS' \
+    'TRANSLATION STORE POSTPUBLISH ROLLBACK: PASS' \
+    'TRANSLATION STORE ROLLBACK POISON CLEANUP: PASS' \
+    'NATIVE PUBLISHED BLOCK EXECUTION: NOT RUN'
+do
+    count=$(grep -Fxc "$marker" "$build/sanitize.log" || true)
+    [ "$count" -eq 1 ] || {
+        printf 'SANITIZED ARM64 TRANSLATION STORE MARKER MISMATCH marker=[%s] count=%s\n' \
+            "$marker" "$count" >&2
+        cat "$build/sanitize.log" >&2
+        exit 1
+    }
+done
+
+printf '%s\n' 'ARM64_STORE_STAGE=clang-analyze'
 set +e
 # shellcheck disable=SC2086
 clang --analyze -Iinclude -Isrc -std=c11 \
     -Wall -Wextra -Wpedantic -Werror -Wshadow \
     -Wstrict-prototypes -Wmissing-prototypes \
-    "$test_source" $sources >"$build/clang-analyze.log" 2>&1
-status=$?
+    "$test_source" $sources \
+    > "$build/clang-analyze.log" 2>&1
+analyze_status=$?
 set -e
-if [ "$status" -ne 0 ]; then
-    printf 'ARM64_STORE_CLANG_ANALYZE_FAILED exit=%s\n' "$status" >&2
+if [ "$analyze_status" -ne 0 ]; then
+    printf 'ARM64_STORE_CLANG_ANALYZE_FAILED exit=%s\n' \
+        "$analyze_status" >&2
     cat "$build/clang-analyze.log" >&2
-    exit "$status"
+    exit "$analyze_status"
 fi
 
 printf '%s\n' 'ARM64 TRANSLATION STORE FOCUSED VERIFY: PASS'
