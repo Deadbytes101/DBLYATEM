@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define CHECK(expr) do { \
@@ -19,8 +20,10 @@ int main(void)
 {
     char path[] = "/tmp/dblyatem-pe-input-XXXXXX";
     char link_path[sizeof(path) + 8u];
+    char fifo_path[sizeof(path) + 8u];
     const unsigned char sample[] = {0x4du, 0x5au, 0x90u, 0x00u};
     db_host_pe_input input;
+    db_host_pe_input copied;
     int fd;
     int count;
 
@@ -52,6 +55,9 @@ int main(void)
     CHECK(db_host_pe_input_open(path, sizeof(sample), &input) ==
           DB_HOST_PE_INPUT_OK);
     CHECK(input.data != NULL && input.size == sizeof(sample));
+    copied = input;
+    CHECK(db_host_pe_input_close(&copied) ==
+          DB_HOST_PE_INPUT_BAD_OWNER);
     CHECK(memcmp(input.data, sample, sizeof(sample)) == 0);
     CHECK(db_host_pe_input_open(path, sizeof(sample), &input) ==
           DB_HOST_PE_INPUT_BAD_OWNER);
@@ -62,6 +68,7 @@ int main(void)
     CHECK(db_host_pe_input_close(&input) == DB_HOST_PE_INPUT_BAD_OWNER);
     db_host_pe_input_init(&input);
     (void)puts("HOST PE INPUT OWNER LIFECYCLE: PASS");
+    (void)puts("HOST PE INPUT COPIED OWNER REJECTION: PASS");
 
     count = snprintf(link_path, sizeof(link_path), "%s.link", path);
     CHECK(count > 0 && (size_t)count < sizeof(link_path));
@@ -71,8 +78,15 @@ int main(void)
     CHECK(input.size == sizeof(sample));
     CHECK(db_host_pe_input_close(&input) == DB_HOST_PE_INPUT_OK);
     CHECK(unlink(link_path) == 0);
+    count = snprintf(fifo_path, sizeof(fifo_path), "%s.fifo", path);
+    CHECK(count > 0 && (size_t)count < sizeof(fifo_path));
+    CHECK(mkfifo(fifo_path, 0600) == 0);
+    CHECK(db_host_pe_input_open(fifo_path, sizeof(sample), &input) ==
+          DB_HOST_PE_INPUT_INVALID_FILE);
+    CHECK(unlink(fifo_path) == 0);
     CHECK(unlink(path) == 0);
     (void)puts("HOST PE INPUT SYMLINK COMPATIBILITY: PASS");
+    (void)puts("HOST PE INPUT FIFO REJECTION: PASS");
 
     (void)puts("HOST PE INPUT CHECK: PASS");
     return 0;
