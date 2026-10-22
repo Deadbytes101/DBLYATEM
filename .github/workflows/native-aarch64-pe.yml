@@ -1,0 +1,88 @@
+name: Native AArch64 PE acceptance
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  arm64-native-pe:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Record actual host identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -a
+          lscpu
+          getconf PAGESIZE
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = aarch64
+          test "$RUNNER_ARCH" = ARM64
+          git rev-parse HEAD
+
+      - name: Ensure native compiler tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v clang >/dev/null || ! command -v gcc >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y gcc clang make python3 binutils
+          fi
+
+      - name: Native PE64 execution and rejection tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh tools/smoke-host-pe-run-aarch64-native.sh
+
+      - name: Preserve observed native execution before regression cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p native-arm64-evidence
+          if test -d build/host-pe-run-aarch64-native; then
+            find build/host-pe-run-aarch64-native -maxdepth 1 -name '*.log' -exec cp '{}' native-arm64-evidence/ \;
+          fi
+
+      - name: Canonical focused and full regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh tools/verify-host-pe-run.sh
+          sh tools/verify-all.sh --contract
+          sh tools/verify-all.sh --run
+
+      - name: Preserve test evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p native-arm64-evidence
+          if test -d build/host-pe-run-aarch64-native; then
+            find build/host-pe-run-aarch64-native -maxdepth 1 -name '*.log' -exec cp '{}' native-arm64-evidence/ \;
+          fi
+          if test -f build/verify-all/manifest.txt; then
+            cp build/verify-all/manifest.txt native-arm64-evidence/verify-all-manifest.txt
+          fi
+          git rev-parse HEAD > native-arm64-evidence/HEAD.txt
+          uname -a > native-arm64-evidence/uname.txt
+          getconf PAGESIZE > native-arm64-evidence/page-size.txt
+          (cd native-arm64-evidence && find . -maxdepth 1 -type f \( -name '*.txt' -o -name '*.log' \) -print0 | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
+
+      - name: Upload native ARM64 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue153-native-arm64-${{ github.event.pull_request.head.sha || github.sha }}
+          path: native-arm64-evidence/
+          if-no-files-found: error
