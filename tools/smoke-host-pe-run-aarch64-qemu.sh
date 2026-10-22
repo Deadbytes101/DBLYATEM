@@ -41,7 +41,7 @@ write_mutation("image-oversize", lambda b: struct.pack_into("<I", b, opt + 56, 0
 write_mutation("image-gateway-overlap", lambda b: struct.pack_into("<Q", b, opt + 24, 0x180000000))
 write_mutation("image-stack-overlap", lambda b: struct.pack_into("<Q", b, opt + 24, 0x70000000))
 (out / "oversize-file.exe").write_bytes(
-    valid + b"\\0" * (16 * 1024 * 1024 + 1 - len(valid))
+    valid + b"\0" * (16 * 1024 * 1024 + 1 - len(valid))
 )
 PY
 
