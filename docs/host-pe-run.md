@@ -26,6 +26,9 @@ and does not attempt to execute translated ARM64 machine code.
 - provider catalog and import/reloc workspace have fixed documented capacities
   in `src/host_pe_run.c`; oversize input is rejected, not truncated
 - no heap allocation within the startup, translation, or session layers
+- far AArch64 helper veneers use volatile x9, preserving x16 guest address
+  and x17 guest data across chained helpers; register clobber was verified
+  against a real ExitProcess-import PE fixture under qemu-aarch64
 
 The host executes bounded prepare/run/dispose and frees host allocations and
 the borrowed file mapping on every exit. Failure to dispose W^X mappings is
