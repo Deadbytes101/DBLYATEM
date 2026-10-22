@@ -73,15 +73,15 @@ grep -Fxq 'PE RUN: EXIT code=0' "$BUILD/exit0.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42.log"
 grep -Fxq 'PE RUN: BLOCK BUDGET EXHAUSTED' "$BUILD/loop.log"
 
-for kind in bad-mz bad-machine image-oversize \\
+for kind in bad-mz bad-machine image-oversize \
             image-gateway-overlap image-stack-overlap oversize-file; do
     set +e
-    timeout 20s qemu-aarch64 -L /usr/aarch64-linux-gnu \\
+    timeout 20s qemu-aarch64 -L /usr/aarch64-linux-gnu \
         "$BUILD/dblyatem" run "$BUILD/$kind.exe" > "$BUILD/$kind.log" 2>&1
     rejected=$?
     set -e
     if [ "$rejected" -ne 2 ]; then
-        printf 'AARCH64 QEMU BAD INPUT: %s exited %s instead of 2\\n' \\
+        printf 'AARCH64 QEMU BAD INPUT: %s exited %s instead of 2\n' \
             "$kind" "$rejected" >&2
         exit 1
     fi
