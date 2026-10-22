@@ -89,6 +89,19 @@ grep -Fxq 'PE RUN: EXIT code=0' "$BUILD/exit0.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42.log"
 grep -Fxq 'PE RUN: BLOCK BUDGET EXHAUSTED' "$BUILD/loop.log"
 
+# Diagnostic mode is opt-in and must include actual guest RIP and cache state.
+if grep -Fq 'PE TRACE:' "$BUILD/exit0.log"; then
+    echo 'NATIVE ARM64 PE: unexpected default trace' >&2
+    exit 1
+fi
+set +e
+DBLYATEM_RUN_TRACE=1 timeout 20s "$BUILD/dblyatem" run "$BUILD/exit42.exe" > "$BUILD/trace42.log" 2>&1
+trace_status=$?
+set -e
+test "$trace_status" -eq 42
+grep -Eq '^PE TRACE: run=[1-9][0-9]* source_rip=0x[[:xdigit:]]{16} final_rip=0x[[:xdigit:]]{16} stop=[0-9]+ cache_count=[1-9][0-9]* fill_count=[1-9][0-9]* hit_count=[0-9]+$' "$BUILD/trace42.log"
+grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/trace42.log"
+
 for kind in bad-mz bad-machine image-oversize \
             image-gateway-overlap image-stack-overlap oversize-file; do
     check_exit "$kind" 2

@@ -73,6 +73,21 @@ grep -Fxq 'PE RUN: EXIT code=0' "$BUILD/exit0.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42.log"
 grep -Fxq 'PE RUN: BLOCK BUDGET EXHAUSTED' "$BUILD/loop.log"
 
+# Trace is opt-in: unchanged default CLI output, but full runtime provenance
+# is available for native acceptance and QEMU regression.
+if grep -Fq 'PE TRACE:' "$BUILD/exit0.log"; then
+    echo 'AARCH64 QEMU TRACE: unexpected default trace' >&2
+    exit 1
+fi
+set +e
+DBLYATEM_RUN_TRACE=1 timeout 20s qemu-aarch64 -L /usr/aarch64-linux-gnu \
+    "$BUILD/dblyatem" run "$BUILD/exit42.exe" > "$BUILD/trace42.log" 2>&1
+trace_status=$?
+set -e
+test "$trace_status" -eq 42
+grep -Eq '^PE TRACE: run=[1-9][0-9]* source_rip=0x[[:xdigit:]]{16} final_rip=0x[[:xdigit:]]{16} stop=[0-9]+ cache_count=[1-9][0-9]* fill_count=[1-9][0-9]* hit_count=[0-9]+$' "$BUILD/trace42.log"
+grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/trace42.log"
+
 for kind in bad-mz bad-machine image-oversize \
             image-gateway-overlap image-stack-overlap oversize-file; do
     set +e
