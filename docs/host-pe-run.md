@@ -53,3 +53,16 @@ with Winlator remain separately gated, not claimed by a WSL x86_64 result.
 Only code paths supported by the current PE loader, IAT/DBGT and x64 ISA
 translator can run. No broad Windows API compatibility, SEH, TLS callback,
 exceptions, arbitrary import providers or unlimited translation cache.
+
+## optional AArch64 QEMU execution check
+
+`sh tools/smoke-host-pe-run-aarch64-qemu.sh` cross-builds a separate
+AArch64 CLI without overwriting `build/dblyatem`. It generates small,
+deterministic PE64 fixtures and checks that translated `ExitProcess(0)`
+returns 0, `ExitProcess(42)` returns 42 and an infinite guest jump
+exhausts its block budget (exit 5). It requires Clang, the AArch64
+glibc cross sysroot, cross readelf, QEMU user mode, Python 3 and `timeout`.
+This is optional on hosts without those tools.
+
+The test exercises actual translated AArch64 machine code inside
+QEMU. It is not evidence of execution on physical ARM64 hardware.
