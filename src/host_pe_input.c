@@ -13,6 +13,7 @@ void db_host_pe_input_init(db_host_pe_input *input)
     if (input != NULL) {
         input->data = NULL;
         input->size = 0u;
+        input->identity = input;
     }
 }
 
@@ -30,14 +31,15 @@ db_host_pe_input_status db_host_pe_input_open(
     if (path == NULL || input == NULL) {
         return DB_HOST_PE_INPUT_NULL_ARGUMENT;
     }
-    if (input->data != NULL || input->size != 0u) {
+    if (input->identity != input ||
+        input->data != NULL || input->size != 0u) {
         return DB_HOST_PE_INPUT_BAD_OWNER;
     }
     if (max_bytes == 0u) {
         return DB_HOST_PE_INPUT_BAD_LIMIT;
     }
 
-    fd = open(path, O_RDONLY | O_CLOEXEC);
+    fd = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
     if (fd < 0) {
         return DB_HOST_PE_INPUT_OPEN_FAILED;
     }
@@ -82,6 +84,9 @@ db_host_pe_input_status db_host_pe_input_close(db_host_pe_input *input)
 {
     if (input == NULL) {
         return DB_HOST_PE_INPUT_NULL_ARGUMENT;
+    }
+    if (input->identity != input) {
+        return DB_HOST_PE_INPUT_BAD_OWNER;
     }
     if (input->data == NULL && input->size == 0u) {
         return DB_HOST_PE_INPUT_OK;
