@@ -484,6 +484,11 @@ static db_win32_translated_execution_status scripted_execute(
 
     (void)memset(summary, 0, sizeof(*summary));
     summary->observed_exit = published->terminal_exit;
+    if (published->terminal_exit.kind ==
+        (uint32_t)DB_TRANSLATED_TERMINAL_EXIT_TARGET) {
+        summary->observed_exit.runtime_target = step->next_rip;
+        summary->observed_exit.runtime_target_valid = 1u;
+    }
     summary->outcome = step->outcome;
     summary->exit_code = step->exit_code;
     summary->format_version = DB_WIN32_TRANSLATED_EXECUTION_FORMAT_VERSION;
