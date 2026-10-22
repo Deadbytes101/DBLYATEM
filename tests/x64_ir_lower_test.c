@@ -195,6 +195,30 @@ static int test_scalar_semantics(void)
     return 1;
 }
 
+static int test_mov_r32_zero_extend(void)
+{
+    db_x64_block_record record;
+    db_ir_instruction output;
+    db_x64_ir_lower_summary summary;
+    record = scalar_record(UINT64_C(0x3000),
+                           DB_X64_INSTRUCTION_MOV_R32_IMM32,
+                           UINT8_C(6), DB_X64_BLOCK_CONTROL_LINEAR);
+    record.scalar.rex = UINT8_C(0x41);
+    record.scalar.destination_register = UINT8_C(8);
+    record.scalar.immediate = UINT64_C(0xffffffff);
+    CHECK(db_x64_ir_lower_block(&record, 1u, &output, 1u, &summary) ==
+          DB_X64_IR_LOWER_OK);
+    CHECK(output.opcode == DB_IR_OPCODE_MOVE_IMMEDIATE);
+    CHECK(output.width == DB_IR_WIDTH_64);
+    CHECK(output.immediate == UINT64_C(0x00000000ffffffff));
+    CHECK(output.destination_register == UINT8_C(8));
+
+    record.scalar.immediate = UINT64_C(0x100000000);
+    CHECK(db_x64_ir_lower_block(&record, 1u, &output, 1u, &summary) ==
+          DB_X64_IR_LOWER_BAD_RECORD);
+    return 1;
+}
+
 static int test_traps_return_and_jump(void)
 {
     db_x64_block_record record;
@@ -343,6 +367,7 @@ int main(void)
 {
     CHECK(test_mixed_block());
     CHECK(test_scalar_semantics());
+    CHECK(test_mov_r32_zero_extend());
     CHECK(test_traps_return_and_jump());
     CHECK(test_address_modes());
     CHECK(test_all_or_nothing_failures());

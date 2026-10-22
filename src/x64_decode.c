@@ -199,18 +199,21 @@ static db_x64_decode_status db_x64_decode_register(
     uint8_t rm;
 
     if (opcode >= UINT8_C(0xb8) && opcode <= UINT8_C(0xbf)) {
-        if ((rex & UINT8_C(0x08)) == 0u) {
-            return DB_X64_DECODE_INVALID_ENCODING;
-        }
-        if (available_size - opcode_index < 9u) {
+        const bool wide = (rex & UINT8_C(0x08)) != 0u;
+        const size_t required = wide ? 9u : 5u;
+        if (available_size - opcode_index < required) {
             return DB_X64_DECODE_TRUNCATED;
         }
-        planned->kind = DB_X64_INSTRUCTION_MOV_R64_IMM64;
+        planned->kind = wide ? DB_X64_INSTRUCTION_MOV_R64_IMM64
+                             : DB_X64_INSTRUCTION_MOV_R32_IMM32;
         planned->destination_register =
             (uint8_t)((opcode - UINT8_C(0xb8)) |
                       ((rex & UINT8_C(0x01)) != 0u ? 8u : 0u));
-        planned->immediate = db_x64_decode_u64(&bytes[opcode_index + 1u]);
-        planned->length = 10u;
+        planned->immediate = wide
+            ? db_x64_decode_u64(&bytes[opcode_index + 1u])
+            : (uint64_t)db_x64_decode_u32(&bytes[opcode_index + 1u]);
+        planned->length = wide ? UINT8_C(10)
+                               : (uint8_t)(rex == 0u ? 5u : 6u);
         return DB_X64_DECODE_OK;
     }
 
@@ -382,7 +385,8 @@ const char *db_x64_instruction_kind_name(db_x64_instruction_kind kind)
         "mov r64, imm64",
         "mov r64, r64",
         "xor r32, r32",
-        "xor r64, r64"
+        "xor r64, r64",
+        "mov r32, imm32"
     };
 
     if ((size_t)kind >= sizeof(names) / sizeof(names[0])) {

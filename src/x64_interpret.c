@@ -96,6 +96,18 @@ static bool instruction_valid(const db_x64_instruction *ins)
                ins->condition < 16u &&
                empty_fields(ins);
 
+    case DB_X64_INSTRUCTION_MOV_R32_IMM32:
+        return ins->length ==
+                   (uint8_t)(ins->rex == 0u ? 5u : 6u) &&
+               (ins->rex & UINT8_C(0x08)) == 0u &&
+               ins->immediate <= UINT32_MAX &&
+               ins->relative == 0 &&
+               ins->destination_register < 16u &&
+               (ins->destination_register >= UINT8_C(8)) ==
+                   ((ins->rex & UINT8_C(0x01)) != 0u) &&
+               ins->source_register == DB_X64_REGISTER_NONE &&
+               ins->condition == DB_X64_CONDITION_NONE;
+
     case DB_X64_INSTRUCTION_MOV_R64_IMM64:
         return ins->length == 10u &&
                (ins->rex & UINT8_C(0x08)) != 0u &&
@@ -295,6 +307,7 @@ db_x64_interpret_status db_x64_interpret_one(
         break;
 
     case DB_X64_INSTRUCTION_MOV_R64_IMM64:
+    case DB_X64_INSTRUCTION_MOV_R32_IMM32:
         done.destination_register = ins->destination_register;
         done.previous_destination =
             state->registers[ins->destination_register];

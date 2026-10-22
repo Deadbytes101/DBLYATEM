@@ -125,6 +125,8 @@ db_x64_ir_lower_status db_x64_ir_lower_emit_record_internal(
         return DB_X64_IR_LOWER_OK;
 
     case DB_X64_INSTRUCTION_MOV_R64_IMM64:
+    case DB_X64_INSTRUCTION_MOV_R32_IMM32:
+        /* x86-64 writes to r32 clear upper 32 bits of the parent r64. */
         instruction->opcode = DB_IR_OPCODE_MOVE_IMMEDIATE;
         instruction->width = DB_IR_WIDTH_64;
         instruction->destination_register =

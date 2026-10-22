@@ -112,6 +112,21 @@ static int test_nop_and_moves(void)
     CHECK(summary.next_destination == instruction.immediate);
 
     instruction =
+        make_instruction(DB_X64_INSTRUCTION_MOV_R32_IMM32, 6u);
+    instruction.rex = UINT8_C(0x41);
+    instruction.destination_register = 9u;
+    instruction.immediate = UINT64_C(0x80000000);
+    before = state;
+
+    CHECK(db_x64_interpret_one(&instruction, &state, &summary) ==
+          DB_X64_INTERPRET_OK);
+    CHECK(before.registers[9] == UINT64_C(0x1122334455667788));
+    CHECK(state.registers[9] == UINT64_C(0x0000000080000000));
+    CHECK(state.rip == before.rip + 6u);
+    CHECK(summary.previous_destination == before.registers[9]);
+    CHECK(summary.next_destination == UINT64_C(0x80000000));
+
+    instruction =
         make_instruction(DB_X64_INSTRUCTION_MOV_R64_R64, 3u);
     instruction.rex = UINT8_C(0x4c);
     instruction.destination_register = 2u;
