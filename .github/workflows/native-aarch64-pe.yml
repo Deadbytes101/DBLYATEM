@@ -2,6 +2,9 @@ name: Native AArch64 PE acceptance
 
 on:
   pull_request:
+  push:
+    branches:
+      - deadbyte/issue153-run-cli-v1
 
 permissions:
   contents: read
