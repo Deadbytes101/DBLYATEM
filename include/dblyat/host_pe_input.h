@@ -20,9 +20,10 @@ typedef enum db_host_pe_input_status {
 typedef struct db_host_pe_input {
     const void *data;
     size_t size;
+    const struct db_host_pe_input *identity;
 } db_host_pe_input;
 
-/* Initialize once before open. A live owner must never be copied or moved. */
+/* Initialize once before open. A copied owner is rejected on open/close. */
 void db_host_pe_input_init(db_host_pe_input *input);
 
 /*
