@@ -52,7 +52,30 @@ jobs:
                 timeout 20s build/host-pe-run-aarch64-native-clang/dblyatem run build/host-pe-run-aarch64-native/exit0.exe > native-arm64-evidence/clang-exit0.log 2>&1
                 echo "CLANG_EXIT0_STATUS=$?"
                 cat native-arm64-evidence/clang-exit0.log
+                for fixture in exit42 loop; do
+                  timeout 20s build/host-pe-run-aarch64-native-clang/dblyatem run build/host-pe-run-aarch64-native/$fixture.exe > native-arm64-evidence/clang-$fixture.log 2>&1
+                  echo "CLANG_$fixture=$?"
+                  cat native-arm64-evidence/clang-$fixture.log
+                done
               fi
+              for mode in O0 O1 O2-noalias; do
+                case "$mode" in
+                  O0) optimization="-O0" ;;
+                  O1) optimization="-O1" ;;
+                  O2-noalias) optimization="-O2 -fno-strict-aliasing" ;;
+                esac
+                flags="-std=c11 $optimization -g -Wall -Wextra -Wpedantic -Werror -Wshadow -Wstrict-prototypes -Wmissing-prototypes"
+                make -s -f GNUmakefile BUILD=build/host-pe-run-gcc-$mode HOST_MACHINE=aarch64 CC=gcc CFLAGS="$flags" build/host-pe-run-gcc-$mode/dblyatem > native-arm64-evidence/gcc-$mode-build.log 2>&1
+                compile_status=$?
+                echo "GCC_$mode-BUILD_STATUS=$compile_status"
+                if test "$compile_status" -eq 0; then
+                  timeout 20s build/host-pe-run-gcc-$mode/dblyatem run build/host-pe-run-aarch64-native/exit0.exe > native-arm64-evidence/gcc-$mode-exit0.log 2>&1
+                  echo "GCC_$mode-EXIT0_STATUS=$?"
+                  cat native-arm64-evidence/gcc-$mode-exit0.log
+                else
+                  tail -n 12 native-arm64-evidence/gcc-$mode-build.log
+                fi
+              done
               timeout 25s gdb -q --batch -ex 'set pagination off' -ex 'break db_win32_translated_demand_run' -ex 'run run build/host-pe-run-aarch64-native/exit0.exe' -ex finish -ex 'info registers x0' --args build/host-pe-run-aarch64-native/dblyatem > native-arm64-evidence/gdb-demand.log 2>&1
               echo "GDB_STATUS=$?"
               tail -n 25 native-arm64-evidence/gdb-demand.log
