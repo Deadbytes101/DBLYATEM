@@ -381,3 +381,21 @@ win32_pe_startup_verify: $(BUILD)/win32_pe_startup_test
 	./$(BUILD)/win32_pe_startup_test
 
 test: win32_provider_tables_verify win32_pe_startup_verify
+
+
+# Issue 153: bounded host PE run entry and exact CLI contract checks.
+CORE += src/host_pe_run.c src/linux_arm64_wx_posix.c
+HEADERS += include/dblyat/host_pe_run.h
+$(BUILD)/dblyatem: src/host_pe_run.c src/linux_arm64_wx_posix.c \
+                   src/linux_arm64_translation_entry.c \
+                   include/dblyat/host_pe_run.h
+$(BUILD)/host_pe_run_plan_test: tests/host_pe_run_plan_test.c \
+                                 src/host_pe_run.c \
+                                 include/dblyat/host_pe_run.h | $(BUILD)
+	$(CC) $(CPPFLAGS) -DDB_HOST_PE_RUN_PLAN_ONLY $(CFLAGS) tests/host_pe_run_plan_test.c \
+		src/host_pe_run.c -o $@
+
+.PHONY: host_pe_run_plan_verify
+host_pe_run_plan_verify: $(BUILD)/host_pe_run_plan_test
+	./$(BUILD)/host_pe_run_plan_test
+test: host_pe_run_plan_verify

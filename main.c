@@ -1,10 +1,12 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "dblyat/host_pe_input.h"
+#include "dblyat/host_pe_run.h"
 #include "dblyat/pe.h"
 
 #include <errno.h>
 #include <stdint.h>
+#include <string.h>
 #include <unistd.h>
 
 static size_t db_cstr_length(const char *text)
@@ -132,6 +134,9 @@ static int db_verify_file(const char *path)
 
 int main(int argc, char **argv)
 {
+    if (argc == 3 && strcmp(argv[1], "run") == 0) {
+        return db_host_pe_run_file(argv[2]);
+    }
     if (argc != 3 || argv[1][0] != 'v' || argv[1][1] != 'e' ||
         argv[1][2] != 'r' || argv[1][3] != 'i' || argv[1][4] != 'f' ||
         argv[1][5] != 'y' || argv[1][6] != '\0') {

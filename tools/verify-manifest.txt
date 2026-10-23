@@ -16,6 +16,7 @@ STANDALONE=tools/verify-x64-arm64-encode.sh
 STANDALONE=tools/verify-x64-arm64-relocate.sh
 STANDALONE=tools/verify-arm64-code-image.sh
 STANDALONE=tools/verify-linux-arm64-wx-provider.sh
+STANDALONE=tools/verify-host-pe-run.sh
 STANDALONE=tools/verify-arm64-block-cache.sh
 STANDALONE=tools/verify-arm64-translation-reuse.sh
 STANDALONE=tools/verify-arm64-translation-benchmark.sh

@@ -20,6 +20,12 @@ run_internal='src/win32_translated_run_internal.h'
 run_source='src/win32_translated_run.c'
 run_test='tests/win32_translated_run_test.c'
 
+# This verifier exercises architecture-neutral guest/session contracts.
+# Force the test-only non-native translation seam even when the runner is
+# aarch64. Native ARM64 machine-code execution has its own hardware smoke.
+gcc() { command gcc -U__aarch64__ "$@"; }
+clang() { command clang -U__aarch64__ "$@"; }
+
 rm -rf "$build"
 mkdir -p "$build"
 cd "$root"

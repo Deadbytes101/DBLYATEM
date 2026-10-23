@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define DB_ARM64_BR_X16 UINT32_C(0xd61f0200)
+#define DB_ARM64_BR_X9 UINT32_C(0xd61f0120)
 
 static bool overlap(const void *left, size_t left_size,
                     const void *right, size_t right_size)
@@ -259,7 +259,7 @@ db_x64_arm64_relocate_status db_x64_arm64_resolve_helpers(
                         target,
                         &output_words[cursor]);
                 output_words[cursor + count] =
-                    DB_ARM64_BR_X16;
+                    DB_ARM64_BR_X9;
                 decision.thunk_word_count = count + 1u;
                 cursor += count + 1u;
             }

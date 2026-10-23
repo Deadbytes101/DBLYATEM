@@ -161,10 +161,12 @@ db_linux_arm64_helper_write_guest_u64:
 .type db_linux_arm64_helper_push_guest_u64, %function
 db_linux_arm64_helper_push_guest_u64:
     db_helper_prologue
+    stp x15, x17, [sp, #-16]!
     mov x2, x17
     mov x1, x20
     mov x0, x19
     bl db_linux_arm64_helper_push_guest_u64_core
+    ldp x15, x17, [sp], #16
     db_helper_epilogue
 .size db_linux_arm64_helper_push_guest_u64, .-db_linux_arm64_helper_push_guest_u64
 
