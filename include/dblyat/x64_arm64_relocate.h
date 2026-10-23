@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define DB_X64_ARM64_HELPER_TARGET_COUNT \
-    ((uint32_t)DB_X64_ARM64_HELPER_RAISE_TRAP + UINT32_C(1))
+    ((uint32_t)DB_X64_ARM64_HELPER_SUB_GUEST_IMM8 + UINT32_C(1))
 
 typedef struct db_x64_arm64_helper_targets {
     uint64_t addresses[DB_X64_ARM64_HELPER_TARGET_COUNT];

@@ -13,7 +13,7 @@ test -f /usr/aarch64-linux-gnu/lib/libc.so.6 || {
     exit 2
 }
 mkdir -p "$BUILD"
-for kind in exit0 exit42 exit42ecx exit42ecxclear loop; do
+for kind in exit0 exit42 exit42ecx exit42ecxclear subrsp_exit42 loop; do
     python3 "$ROOT/tools/gen-host-pe-run-fixture.py" "$kind" "$BUILD/$kind.exe"
 done
 
@@ -68,6 +68,9 @@ timeout 20s qemu-aarch64 -L /usr/aarch64-linux-gnu \
     "$BUILD/dblyatem" run "$BUILD/exit42ecxclear.exe" > "$BUILD/exit42ecxclear.log" 2>&1
 ecx_clear=$?
 timeout 20s qemu-aarch64 -L /usr/aarch64-linux-gnu \
+    "$BUILD/dblyatem" run "$BUILD/subrsp_exit42.exe" > "$BUILD/subrsp_exit42.log" 2>&1
+sub_rsp=$?
+timeout 20s qemu-aarch64 -L /usr/aarch64-linux-gnu \
     "$BUILD/dblyatem" run "$BUILD/loop.exe" > "$BUILD/loop.log" 2>&1
 loop=$?
 set -e
@@ -76,11 +79,13 @@ test "$zero" -eq 0
 test "$forty_two" -eq 42
 test "$ecx" -eq 42
 test "$ecx_clear" -eq 42
+test "$sub_rsp" -eq 42
 test "$loop" -eq 5
 grep -Fxq 'PE RUN: EXIT code=0' "$BUILD/exit0.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42ecx.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42ecxclear.log"
+grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/subrsp_exit42.log"
 grep -Fxq 'PE RUN: BLOCK BUDGET EXHAUSTED' "$BUILD/loop.log"
 
 # Trace is opt-in: unchanged default CLI output, but full runtime provenance
@@ -125,7 +130,7 @@ if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
         BUILD=build/host-pe-run-aarch64-qemu-gcc \
         HOST_MACHINE=aarch64 CC=aarch64-linux-gnu-gcc \
         build/host-pe-run-aarch64-qemu-gcc/dblyatem
-    for record in exit0:0 exit42:42 loop:5; do
+    for record in exit0:0 exit42:42 subrsp_exit42:42 loop:5; do
         kind=${record%%:*}
         expected=${record#*:}
         set +e
@@ -151,6 +156,7 @@ fi
 printf '%s\n' 'AARCH64 QEMU EXITPROCESS 0: PASS' \
               'AARCH64 QEMU EXITPROCESS 42: PASS' \
               'AARCH64 QEMU MOV ECX ZERO EXTEND: PASS' \
+              'AARCH64 QEMU SUB RSP IMM8: PASS' \
               'AARCH64 QEMU LOOP BUDGET: PASS' \
               'AARCH64 QEMU BAD INPUT REJECTION: PASS' \
               'AARCH64 QEMU HOST RUN SMOKE: PASS' \

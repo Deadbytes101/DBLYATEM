@@ -30,7 +30,7 @@ printf 'NATIVE ARM64 HOST: arch=%s page_size=%s\n' "$ARCH" "$PAGE_SIZE"
 printf 'NATIVE ARM64 SOURCE: %s\n' "$(git -C "$ROOT" rev-parse HEAD)"
 mkdir -p "$BUILD"
 
-for kind in exit0 exit42 exit42ecx exit42ecxclear loop; do
+for kind in exit0 exit42 exit42ecx exit42ecxclear subrsp_exit42 loop; do
     python3 "$ROOT/tools/gen-host-pe-run-fixture.py" "$kind" "$BUILD/$kind.exe"
 done
 
@@ -65,7 +65,8 @@ make -s -C "$ROOT" -f GNUmakefile \
 
 readelf -h "$BUILD/dblyatem" | grep -Fq 'Machine:                           AArch64'
 sha256sum "$BUILD/dblyatem" "$BUILD/exit0.exe" "$BUILD/exit42.exe" \
-    "$BUILD/exit42ecx.exe" "$BUILD/exit42ecxclear.exe" "$BUILD/loop.exe"
+    "$BUILD/exit42ecx.exe" "$BUILD/exit42ecxclear.exe" \
+    "$BUILD/subrsp_exit42.exe" "$BUILD/loop.exe"
 
 check_exit() {
     kind=$1
@@ -87,11 +88,13 @@ check_exit exit0 0
 check_exit exit42 42
 check_exit exit42ecx 42
 check_exit exit42ecxclear 42
+check_exit subrsp_exit42 42
 check_exit loop 5
 grep -Fxq 'PE RUN: EXIT code=0' "$BUILD/exit0.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42ecx.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42ecxclear.log"
+grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/subrsp_exit42.log"
 grep -Fxq 'PE RUN: BLOCK BUDGET EXHAUSTED' "$BUILD/loop.log"
 
 # Diagnostic mode is opt-in and must include actual guest RIP and cache state.
@@ -121,5 +124,6 @@ grep -Fxq 'DblyatEM run: invalid host input' "$BUILD/oversize-file.log"
 printf '%s\n' 'NATIVE AARCH64 PE EXITPROCESS 0: PASS' \
               'NATIVE AARCH64 PE EXITPROCESS 42: PASS' \
               'NATIVE AARCH64 PE MOV ECX ZERO EXTEND: PASS' \
+              'NATIVE AARCH64 PE SUB RSP IMM8: PASS' \
               'NATIVE AARCH64 PE LOOP BUDGET: PASS' \
               'NATIVE AARCH64 PE BAD INPUT: PASS'

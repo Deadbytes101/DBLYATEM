@@ -17,7 +17,8 @@ const char *db_ir_opcode_name(db_ir_opcode opcode)
         "jump direct",
         "jump indirect",
         "jump conditional",
-        "trap"
+        "trap",
+        "sub immediate"
     };
 
     if ((size_t)opcode >= sizeof(names) / sizeof(names[0])) {

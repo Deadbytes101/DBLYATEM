@@ -162,6 +162,19 @@ bool db_x64_arm64_plan_selection_valid_internal(
                record->index_register == DB_IR_REGISTER_NONE &&
                record->scale == UINT8_C(1) &&
                record->temp == DB_ARM64_SELECT_TEMP_NONE;
+    case DB_ARM64_SELECT_SUB_GUEST_IMM8:
+        return (uint64_t)(int64_t)(int8_t)record->value == record->value &&
+               record->displacement == 0 &&
+               record->width == DB_IR_WIDTH_64 &&
+               record->destination_register == UINT8_C(4) &&
+               record->source_register == DB_IR_REGISTER_NONE &&
+               record->address_mode == DB_IR_ADDRESS_NONE &&
+               record->condition == (db_ir_condition)DB_IR_CONDITION_NONE &&
+               record->trap == DB_IR_TRAP_NONE &&
+               record->base_register == DB_IR_REGISTER_NONE &&
+               record->index_register == DB_IR_REGISTER_NONE &&
+               record->scale == UINT8_C(1) &&
+               record->temp == DB_ARM64_SELECT_TEMP_NONE;
     case DB_ARM64_SELECT_EOR_GUEST_GPR:
         return record->value == 0u && record->displacement == 0 &&
                (record->width == DB_IR_WIDTH_32 ||

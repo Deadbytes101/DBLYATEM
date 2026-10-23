@@ -34,7 +34,7 @@ def idata_off(rva):
 
 
 def build(kind):
-    assert kind in ("exit0", "exit42", "exit42ecx", "exit42ecxclear", "loop")
+    assert kind in ("exit0", "exit42", "exit42ecx", "exit42ecxclear", "subrsp_exit42", "loop")
     data = bytearray(FILE_SIZE)
     data[:2] = b"MZ"
     u32(data, 0x3C, PE)
@@ -76,6 +76,8 @@ def build(kind):
             argument = bytes.fromhex("31c9")
         elif kind == "exit42ecx":
             argument = bytes.fromhex("b92a000000")
+        elif kind == "subrsp_exit42":
+            argument = bytes.fromhex("4883ec28b92a000000")
         elif kind == "exit42ecxclear":
             argument = (bytes.fromhex("48b9") + b"\xff" * 8 +
                         bytes.fromhex("b92a000000"))
@@ -102,11 +104,11 @@ def build(kind):
 
 def main():
     if len(sys.argv) != 3 or sys.argv[1] not in (
-        "exit0", "exit42", "exit42ecx", "exit42ecxclear", "loop"
+        "exit0", "exit42", "exit42ecx", "exit42ecxclear", "subrsp_exit42", "loop"
     ):
         raise SystemExit(
             "usage: gen-host-pe-run-fixture.py "
-            "{exit0|exit42|exit42ecx|exit42ecxclear|loop} OUT.exe"
+            "{exit0|exit42|exit42ecx|exit42ecxclear|subrsp_exit42|loop} OUT.exe"
         )
     Path(sys.argv[2]).write_bytes(build(sys.argv[1]))
 

@@ -96,6 +96,16 @@ static bool instruction_valid(const db_x64_instruction *ins)
                ins->condition < 16u &&
                empty_fields(ins);
 
+    case DB_X64_INSTRUCTION_SUB_RSP_IMM8:
+        return ins->length == UINT8_C(4) &&
+               ins->rex == UINT8_C(0x48) &&
+               ins->relative == 0 &&
+               (uint64_t)(int64_t)(int8_t)ins->immediate ==
+                   ins->immediate &&
+               ins->destination_register == UINT8_C(4) &&
+               ins->source_register == DB_X64_REGISTER_NONE &&
+               ins->condition == DB_X64_CONDITION_NONE;
+
     case DB_X64_INSTRUCTION_MOV_R32_IMM32:
         return ins->length ==
                    (uint8_t)(ins->rex == 0u ? 5u : 6u) &&
@@ -202,6 +212,23 @@ static uint64_t xor_flags(uint64_t old, uint64_t result, bool width64)
         flags |= DB_X64_RFLAGS_PF;
     }
     return flags;
+}
+
+static uint64_t sub_flags(uint64_t old, uint64_t before,
+                          uint64_t operand, uint64_t result)
+{
+    uint64_t flags = old & ~DB_X64_ARITH_FLAGS;
+    if (before < operand) flags |= DB_X64_RFLAGS_CF;
+    if (parity_even((uint8_t)result)) flags |= DB_X64_RFLAGS_PF;
+    if (((before ^ operand ^ result) & UINT64_C(0x10)) != 0u)
+        flags |= DB_X64_RFLAGS_AF;
+    if (result == 0u) flags |= DB_X64_RFLAGS_ZF;
+    if ((result & UINT64_C(0x8000000000000000)) != 0u)
+        flags |= DB_X64_RFLAGS_SF;
+    if (((before ^ operand) & (before ^ result) &
+         UINT64_C(0x8000000000000000)) != 0u)
+        flags |= DB_X64_RFLAGS_OF;
+    return flags | DB_X64_RFLAGS_FIXED_ONE;
 }
 
 static bool condition_true(uint8_t c, uint64_t f)
@@ -355,6 +382,20 @@ db_x64_interpret_status db_x64_interpret_one(
         done.next_destination = result;
         next.registers[ins->destination_register] = result;
         next.rflags = xor_flags(state->rflags, result, true);
+        next.rip = fallthrough;
+        done.next_rflags = next.rflags;
+        break;
+    }
+
+    case DB_X64_INSTRUCTION_SUB_RSP_IMM8:
+    {
+        const uint64_t before = state->registers[4];
+        const uint64_t after = before - ins->immediate;
+        done.destination_register = UINT8_C(4);
+        done.previous_destination = before;
+        done.next_destination = after;
+        next.registers[4] = after;
+        next.rflags = sub_flags(state->rflags, before, ins->immediate, after);
         next.rip = fallthrough;
         done.next_rflags = next.rflags;
         break;

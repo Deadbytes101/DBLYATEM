@@ -86,7 +86,7 @@ static bool mode(db_ir_address_mode m)
 static bool helper(db_x64_arm64_helper h)
 {
     return h > DB_X64_ARM64_HELPER_NONE &&
-           h <= DB_X64_ARM64_HELPER_RAISE_TRAP;
+           h <= DB_X64_ARM64_HELPER_SUB_GUEST_IMM8;
 }
 
 static bool state_offset(const db_x64_arm64_plan_record *p)

@@ -39,6 +39,12 @@ void db_linux_arm64_helper_update_logic_flags_core(
     uint64_t width,
     uint64_t guest_register);
 
+void db_linux_arm64_helper_sub_guest_imm8_core(
+    db_x64_scalar_state *state,
+    db_linux_arm64_translation_context *context,
+    uint64_t immediate,
+    uint64_t guest_register);
+
 uint64_t db_linux_arm64_helper_test_guest_condition_core(
     db_x64_scalar_state *state,
     db_linux_arm64_translation_context *context,

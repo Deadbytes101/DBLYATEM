@@ -73,6 +73,9 @@ static uint32_t helper_argument_expansion(
     const db_arm64_select_record *record)
 {
     switch (record->opcode) {
+    case DB_ARM64_SELECT_SUB_GUEST_IMM8:
+        return chunks(record->value) + chunks(UINT64_C(4));
+
     case DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS:
         return chunks((uint64_t)(uint32_t)record->width) +
                chunks((uint64_t)record->source_register);
@@ -101,6 +104,7 @@ uint32_t db_x64_arm64_plan_expansion_internal(
     case DB_ARM64_SELECT_MATERIALIZE_U64: return chunks(record->value) + 1u;
     case DB_ARM64_SELECT_MOVE_GUEST_GPR: return 2u;
     case DB_ARM64_SELECT_EOR_GUEST_GPR: return 4u;
+    case DB_ARM64_SELECT_SUB_GUEST_IMM8:
     case DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS:
     case DB_ARM64_SELECT_FORM_GUEST_ADDRESS:
     case DB_ARM64_SELECT_TEST_GUEST_CONDITION:

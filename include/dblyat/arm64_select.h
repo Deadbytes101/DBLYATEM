@@ -21,7 +21,8 @@ typedef enum db_arm64_select_opcode {
     DB_ARM64_SELECT_BRANCH_GUEST_TARGET,
     DB_ARM64_SELECT_TEST_GUEST_CONDITION,
     DB_ARM64_SELECT_BRANCH_IF_TRUE,
-    DB_ARM64_SELECT_RAISE_TRAP
+    DB_ARM64_SELECT_RAISE_TRAP,
+    DB_ARM64_SELECT_SUB_GUEST_IMM8
 } db_arm64_select_opcode;
 
 typedef enum db_arm64_select_temp {

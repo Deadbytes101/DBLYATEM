@@ -183,6 +183,16 @@ static bool db_x64_ir_lower_scalar_valid(
                instruction->condition < UINT8_C(16) &&
                db_x64_ir_lower_scalar_empty_fields(instruction);
 
+    case DB_X64_INSTRUCTION_SUB_RSP_IMM8:
+        return instruction->length == UINT8_C(4) &&
+               instruction->rex == UINT8_C(0x48) &&
+               instruction->relative == 0 &&
+               (uint64_t)(int64_t)(int8_t)instruction->immediate ==
+                   instruction->immediate &&
+               instruction->destination_register == UINT8_C(4) &&
+               instruction->source_register == DB_X64_REGISTER_NONE &&
+               instruction->condition == DB_X64_CONDITION_NONE;
+
     case DB_X64_INSTRUCTION_MOV_R32_IMM32:
         return instruction->length ==
                    (uint8_t)(instruction->rex == 0u ? 5u : 6u) &&
@@ -355,6 +365,7 @@ static db_x64_block_control db_x64_ir_lower_expected_control_scalar(
     case DB_X64_INSTRUCTION_MOV_R64_R64:
     case DB_X64_INSTRUCTION_XOR_R32_R32:
     case DB_X64_INSTRUCTION_XOR_R64_R64:
+    case DB_X64_INSTRUCTION_SUB_RSP_IMM8:
         return DB_X64_BLOCK_CONTROL_LINEAR;
     }
 
