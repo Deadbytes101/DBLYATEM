@@ -107,11 +107,15 @@ jobs:
             if test -f build/verify-all/manifest.txt; then
               cp build/verify-all/manifest.txt native-arm64-evidence/verify-all-manifest.txt
             fi
+            if test -d build/verify-all/logs; then
+              mkdir -p native-arm64-evidence/verify-all-logs
+              cp build/verify-all/logs/*.log native-arm64-evidence/verify-all-logs/
+            fi
             git rev-parse HEAD > native-arm64-evidence/HEAD.txt
             git show -s --format=%T HEAD > native-arm64-evidence/TREE.txt
             uname -a > native-arm64-evidence/uname.txt
             getconf PAGESIZE > native-arm64-evidence/page-size.txt
-            (cd native-arm64-evidence && find . -maxdepth 1 -type f \( -name '*.txt' -o -name '*.log' \) -print0 | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
+            (cd native-arm64-evidence && find . -type f \( -name '*.txt' -o -name '*.log' \) -print0 | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
 
       - store_artifacts:
           path: native-arm64-evidence
