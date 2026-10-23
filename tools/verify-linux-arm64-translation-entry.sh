@@ -186,6 +186,16 @@ do
     }
 done
 
+machine=$(uname -m)
+case "$machine" in
+    aarch64|arm64)
+        # The guest-runtime test links the entry C owner as well. On native
+        # Arm64 that owner references wrappers defined in the real asm file.
+        gcc -c "$entry_asm" -o "$build/guest-native-entry.o"
+        guest_sources="$guest_sources $build/guest-native-entry.o"
+        ;;
+esac
+
 for compiler in gcc clang
 do
     binary="$build/guest-runtime-$compiler"

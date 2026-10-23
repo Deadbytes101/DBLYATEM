@@ -17,6 +17,34 @@ for kind in exit0 exit42 exit42ecx exit42ecxclear loop; do
     python3 "$ROOT/tools/gen-host-pe-run-fixture.py" "$kind" "$BUILD/$kind.exe"
 done
 
+# Adversarial inputs derived from the accepted ExitProcess(0) fixture.
+# They exercise the native AArch64 host-run rejection path under QEMU,
+# rather than relying on a compile-only branch check.
+python3 - "$BUILD" <<'PY'
+from pathlib import Path
+import struct
+import sys
+
+out = Path(sys.argv[1])
+valid = bytearray((out / "exit0.exe").read_bytes())
+coff = 0x80 + 4
+opt = coff + 20
+
+def write_mutation(name, mutate):
+    data = bytearray(valid)
+    mutate(data)
+    (out / (name + ".exe")).write_bytes(data)
+
+write_mutation("bad-mz", lambda b: b.__setitem__(slice(0, 2), b"XX"))
+write_mutation("bad-machine", lambda b: struct.pack_into("<H", b, coff, 0x14C))
+write_mutation("image-oversize", lambda b: struct.pack_into("<I", b, opt + 56, 0x01001000))
+write_mutation("image-gateway-overlap", lambda b: struct.pack_into("<Q", b, opt + 24, 0x180000000))
+write_mutation("image-stack-overlap", lambda b: struct.pack_into("<Q", b, opt + 24, 0x70000000))
+(out / "oversize-file.exe").write_bytes(
+    valid + b"\0" * (16 * 1024 * 1024 + 1 - len(valid))
+)
+PY
+
 # Isolation: a separate BUILD directory avoids overwriting the normal x86 binary.
 make -s -C "$ROOT" -f GNUmakefile \
     BUILD=build/host-pe-run-aarch64-qemu \
@@ -54,9 +82,76 @@ grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42ecx.log"
 grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/exit42ecxclear.log"
 grep -Fxq 'PE RUN: BLOCK BUDGET EXHAUSTED' "$BUILD/loop.log"
+
+# Trace is opt-in: unchanged default CLI output, but full runtime provenance
+# is available for native acceptance and QEMU regression.
+if grep -Fq 'PE TRACE:' "$BUILD/exit0.log"; then
+    echo 'AARCH64 QEMU TRACE: unexpected default trace' >&2
+    exit 1
+fi
+set +e
+DBLYATEM_RUN_TRACE=1 timeout 20s qemu-aarch64 -L /usr/aarch64-linux-gnu \
+    "$BUILD/dblyatem" run "$BUILD/exit42.exe" > "$BUILD/trace42.log" 2>&1
+trace_status=$?
+set -e
+test "$trace_status" -eq 42
+grep -Eq '^PE TRACE: run=[1-9][0-9]* source_rip=0x[[:xdigit:]]{16} final_rip=0x[[:xdigit:]]{16} stop=[0-9]+ cache_count=[1-9][0-9]* fill_count=[1-9][0-9]* hit_count=[0-9]+$' "$BUILD/trace42.log"
+grep -Fxq 'PE RUN: EXIT code=42' "$BUILD/trace42.log"
+
+for kind in bad-mz bad-machine image-oversize \
+            image-gateway-overlap image-stack-overlap oversize-file; do
+    set +e
+    timeout 20s qemu-aarch64 -L /usr/aarch64-linux-gnu \
+        "$BUILD/dblyatem" run "$BUILD/$kind.exe" > "$BUILD/$kind.log" 2>&1
+    rejected=$?
+    set -e
+    if [ "$rejected" -ne 2 ]; then
+        printf 'AARCH64 QEMU BAD INPUT: %s exited %s instead of 2\n' \
+            "$kind" "$rejected" >&2
+        exit 1
+    fi
+done
+grep -Fxq 'DblyatEM run: invalid PE: bad DOS signature' "$BUILD/bad-mz.log"
+grep -Fxq 'DblyatEM run: invalid PE: unsupported machine' "$BUILD/bad-machine.log"
+for kind in image-oversize image-gateway-overlap image-stack-overlap; do
+    grep -Fxq 'DblyatEM run: image size/range unsupported' "$BUILD/$kind.log"
+done
+grep -Fxq 'DblyatEM run: invalid host input' "$BUILD/oversize-file.log"
+# Optional GCC AArch64 O2 gate. This catches caller-saved register corruption
+# when an ARM64 assembly helper calls optimized C code.
+if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+    GCC_BUILD="$ROOT/build/host-pe-run-aarch64-qemu-gcc"
+    make -s -C "$ROOT" -f GNUmakefile \
+        BUILD=build/host-pe-run-aarch64-qemu-gcc \
+        HOST_MACHINE=aarch64 CC=aarch64-linux-gnu-gcc \
+        build/host-pe-run-aarch64-qemu-gcc/dblyatem
+    for record in exit0:0 exit42:42 loop:5; do
+        kind=${record%%:*}
+        expected=${record#*:}
+        set +e
+        timeout 20s qemu-aarch64 -L /usr/aarch64-linux-gnu \
+            "$GCC_BUILD/dblyatem" run "$BUILD/$kind.exe" > "$GCC_BUILD/$kind.log" 2>&1
+        actual=$?
+        set -e
+        if [ "$actual" -ne "$expected" ]; then
+            printf 'AARCH64 QEMU GCC O2: %s status=%s expected=%s\n' \
+                "$kind" "$actual" "$expected" >&2
+            cat "$GCC_BUILD/$kind.log" >&2
+            exit 1
+        fi
+    done
+    grep -Fxq 'PE RUN: EXIT code=0' "$GCC_BUILD/exit0.log"
+    grep -Fxq 'PE RUN: EXIT code=42' "$GCC_BUILD/exit42.log"
+    grep -Fxq 'PE RUN: BLOCK BUDGET EXHAUSTED' "$GCC_BUILD/loop.log"
+    printf '%s\n' 'AARCH64 QEMU GCC O2 REGRESSION: PASS'
+else
+    printf '%s\n' 'AARCH64 QEMU GCC O2: NOT RUN (cross-GCC unavailable)'
+fi
+
 printf '%s\n' 'AARCH64 QEMU EXITPROCESS 0: PASS' \
               'AARCH64 QEMU EXITPROCESS 42: PASS' \
               'AARCH64 QEMU MOV ECX ZERO EXTEND: PASS' \
               'AARCH64 QEMU LOOP BUDGET: PASS' \
+              'AARCH64 QEMU BAD INPUT REJECTION: PASS' \
               'AARCH64 QEMU HOST RUN SMOKE: PASS' \
               'PHYSICAL ARM64 HOST: NOT RUN'

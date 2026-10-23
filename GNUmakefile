@@ -392,7 +392,7 @@ $(BUILD)/dblyatem: src/host_pe_run.c src/linux_arm64_wx_posix.c \
 $(BUILD)/host_pe_run_plan_test: tests/host_pe_run_plan_test.c \
                                  src/host_pe_run.c \
                                  include/dblyat/host_pe_run.h | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) tests/host_pe_run_plan_test.c \
+	$(CC) $(CPPFLAGS) -DDB_HOST_PE_RUN_PLAN_ONLY $(CFLAGS) tests/host_pe_run_plan_test.c \
 		src/host_pe_run.c -o $@
 
 .PHONY: host_pe_run_plan_verify

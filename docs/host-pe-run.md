@@ -48,6 +48,24 @@ compile-only check is **not** native AArch64 execution proof.
 Exact PE startup/runtime on physical AArch64 Linux or Android and comparison
 with Winlator remain separately gated, not claimed by a WSL x86_64 result.
 
+## opt-in runtime trace
+
+Set `DBLYATEM_RUN_TRACE=1` for an AArch64 host execution to print
+one `PE TRACE` record per successful session run to stderr.
+Ordinary `dblyatem run FILE.exe` output and exit codes stay unchanged.
+
+The trace reports `source_rip`, `final_rip`, stop reason,
+published translation-cache slot count, and per-run fill/hit counts.
+`final_rip` can refer to a DBGT gateway after an imported
+`ExitProcess` call; it is not always a guest image instruction.
+The counters describe translation state, not native benchmark throughput.
+
+`tools/smoke-host-pe-run-aarch64-native.sh` checks the trace along with
+exit codes, malformed PE rejection and Linux AArch64 host identity.
+The opt-in `tools/smoke-host-pe-run-aarch64-qemu.sh` verifies the same
+trace fields under emulation. Only execution on a verified actual
+AArch64 host satisfies Issue #153 native acceptance.
+
 ## upstream limitation
 
 Only code paths supported by the current PE loader, IAT/DBGT and x64 ISA

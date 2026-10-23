@@ -4,6 +4,7 @@
 #include "dblyat/host_pe_input.h"
 #include "dblyat/win32_pe_translated_session.h"
 
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,7 +69,7 @@ db_host_pe_run_plan_status db_host_pe_run_plan(
     return DB_HOST_PE_RUN_PLAN_OK;
 }
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) && !defined(DB_HOST_PE_RUN_PLAN_ONLY)
 
 enum {
     HOST_CACHE_SLOTS = 32,
@@ -287,6 +288,9 @@ static int host_execute(host_run_owned *owned)
     db_win32_pe_translated_session_run_summary summary;
     db_win32_pe_translated_session_status status;
     uint32_t run;
+    const char *trace_env = getenv("DBLYATEM_RUN_TRACE");
+    const int trace_enabled = trace_env != NULL &&
+                              strcmp(trace_env, "1") == 0;
     int result = 5;
 
     db_win32_pe_translated_session_init(&owned->session);
@@ -322,6 +326,17 @@ static int host_execute(host_run_owned *owned)
             result = 4;
             break;
         }
+        if (trace_enabled) {
+            (void)fprintf(stderr,
+                          "PE TRACE: run=%u source_rip=0x%016" PRIx64
+                          " final_rip=0x%016" PRIx64
+                          " stop=%u cache_count=%zu fill_count=%u hit_count=%u\n",
+                          summary.session_run_count,
+                          summary.source_rip, summary.final_rip,
+                          summary.stop_reason, owned->session.store.cache.count,
+                          summary.demand.fill_count,
+                          summary.demand.cache_hit_fill_count);
+        }
         if (summary.stop_reason ==
             (uint32_t)DB_WIN32_TRANSLATED_DEMAND_RUN_STOP_GUEST_TERMINATED) {
             (void)fprintf(stdout, "PE RUN: EXIT code=%u\n",
@@ -352,7 +367,7 @@ static int host_execute(host_run_owned *owned)
 
 int db_host_pe_run_file(const char *path)
 {
-#if !defined(__aarch64__)
+#if !defined(__aarch64__) || defined(DB_HOST_PE_RUN_PLAN_ONLY)
     (void)path;
     (void)fprintf(stderr,
                   "DblyatEM run: native AArch64 Linux host required\n");
