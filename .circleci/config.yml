@@ -27,7 +27,7 @@ jobs:
           command: |
             set -euo pipefail
             sudo apt-get update
-            sudo apt-get install --yes gcc clang make python3 binutils
+            sudo apt-get install --yes gcc clang make python3 binutils gdb strace
 
       - run:
           name: Native AArch64 PE64 acceptance
@@ -36,6 +36,32 @@ jobs:
             sh tools/smoke-host-pe-run-aarch64-native.sh | tee native-arm64-evidence/native-smoke.log
             find build/host-pe-run-aarch64-native -maxdepth 1 -name '*.log' -exec cp '{}' native-arm64-evidence/ \;
           no_output_timeout: 10m
+
+      - run:
+          name: Diagnose native GCC Clang and translated demand status
+          when: on_fail
+          command: |
+            set -u
+            mkdir -p native-arm64-evidence
+            if test -f build/host-pe-run-aarch64-native/exit0.exe; then
+              set +e
+              make -s -f GNUmakefile BUILD=build/host-pe-run-aarch64-native-clang HOST_MACHINE=aarch64 CC=clang build/host-pe-run-aarch64-native-clang/dblyatem > native-arm64-evidence/clang-build.log 2>&1
+              clang_build_status=$?
+              echo "CLANG_BUILD_STATUS=$clang_build_status"
+              if test "$clang_build_status" -eq 0; then
+                timeout 20s build/host-pe-run-aarch64-native-clang/dblyatem run build/host-pe-run-aarch64-native/exit0.exe > native-arm64-evidence/clang-exit0.log 2>&1
+                echo "CLANG_EXIT0_STATUS=$?"
+                cat native-arm64-evidence/clang-exit0.log
+              fi
+              timeout 25s gdb -q --batch -ex 'set pagination off' -ex 'break db_win32_translated_demand_run' -ex 'run run build/host-pe-run-aarch64-native/exit0.exe' -ex finish -ex 'info registers x0' --args build/host-pe-run-aarch64-native/dblyatem > native-arm64-evidence/gdb-demand.log 2>&1
+              echo "GDB_STATUS=$?"
+              tail -n 25 native-arm64-evidence/gdb-demand.log
+              timeout 20s strace -f -e trace=mmap,mprotect,munmap -o native-arm64-evidence/strace-mapping.log build/host-pe-run-aarch64-native/dblyatem run build/host-pe-run-aarch64-native/exit0.exe > native-arm64-evidence/strace-exit0.log 2>&1
+              echo "STRACE_EXIT0_STATUS=$?"
+              tail -n 20 native-arm64-evidence/strace-mapping.log
+              set -e
+            fi
+          no_output_timeout: 5m
 
       - run:
           name: Focused and full exact-head regression
