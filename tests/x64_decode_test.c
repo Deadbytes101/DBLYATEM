@@ -127,6 +127,15 @@ static int test_register_instructions(void)
     static const uint8_t mov_r10_r11[] = {
         UINT8_C(0x4d), UINT8_C(0x8b), UINT8_C(0xd3)
     };
+    static const uint8_t mov_ecx[] = {
+        UINT8_C(0xb9), 42u, 0u, 0u, 0u
+    };
+    static const uint8_t mov_r8d[] = {
+        UINT8_C(0x41), UINT8_C(0xb8), 0xffu, 0xffu, 0xffu, 0xffu
+    };
+    static const uint8_t mov_r15d[] = {
+        UINT8_C(0x41), UINT8_C(0xbf), 0x12u, 0x34u, 0x56u, 0x80u
+    };
     static const uint8_t xor_eax[] = {UINT8_C(0x31), UINT8_C(0xc0)};
     static const uint8_t xor_rax[] = {
         UINT8_C(0x48), UINT8_C(0x31), UINT8_C(0xc0)
@@ -154,6 +163,19 @@ static int test_register_instructions(void)
     CHECK(db_x64_decode_one(mov_r10_r11, sizeof(mov_r10_r11), &instruction) == DB_X64_DECODE_OK);
     CHECK(instruction.destination_register == 10u);
     CHECK(instruction.source_register == 11u);
+
+    CHECK(db_x64_decode_one(mov_ecx, sizeof(mov_ecx), &instruction) == DB_X64_DECODE_OK);
+    CHECK(instruction.kind == DB_X64_INSTRUCTION_MOV_R32_IMM32);
+    CHECK(instruction.destination_register == 1u);
+    CHECK(instruction.immediate == UINT64_C(42) && instruction.length == 5u);
+    CHECK(db_x64_decode_one(mov_r8d, sizeof(mov_r8d), &instruction) == DB_X64_DECODE_OK);
+    CHECK(instruction.kind == DB_X64_INSTRUCTION_MOV_R32_IMM32);
+    CHECK(instruction.destination_register == 8u);
+    CHECK(instruction.immediate == UINT64_C(0xffffffff));
+    CHECK(instruction.length == 6u);
+    CHECK(db_x64_decode_one(mov_r15d, sizeof(mov_r15d), &instruction) == DB_X64_DECODE_OK);
+    CHECK(instruction.destination_register == 15u);
+    CHECK(instruction.immediate == UINT64_C(0x80563412));
 
     CHECK(db_x64_decode_one(xor_eax, sizeof(xor_eax), &instruction) == DB_X64_DECODE_OK);
     CHECK(instruction.kind == DB_X64_INSTRUCTION_XOR_R32_R32);
@@ -193,7 +215,8 @@ static int test_failures(void)
     CHECK(preserved(rex_nop, sizeof(rex_nop), DB_X64_DECODE_INVALID_ENCODING));
     CHECK(preserved(unsupported, sizeof(unsupported), DB_X64_DECODE_UNSUPPORTED_OPCODE));
     CHECK(preserved(memory_mov, sizeof(memory_mov), DB_X64_DECODE_UNSUPPORTED_ADDRESSING));
-    CHECK(preserved(mov32_imm, sizeof(mov32_imm), DB_X64_DECODE_INVALID_ENCODING));
+    CHECK(preserved(mov32_imm, sizeof(mov32_imm) - 1u, DB_X64_DECODE_TRUNCATED));
+    CHECK(preserved(mov32_imm, 1u, DB_X64_DECODE_TRUNCATED));
     CHECK(preserved(short_call, sizeof(short_call), DB_X64_DECODE_TRUNCATED));
     CHECK(preserved(short_jcc, sizeof(short_jcc), DB_X64_DECODE_TRUNCATED));
     CHECK(preserved(unsupported, 0u, DB_X64_DECODE_EMPTY_INPUT));
@@ -220,6 +243,7 @@ static int test_guards_and_names(void)
     CHECK(db_x64_decode_status_name((db_x64_decode_status)99)[0] == 'u');
     CHECK(db_x64_instruction_kind_name(DB_X64_INSTRUCTION_NOP)[0] == 'n');
     CHECK(db_x64_instruction_kind_name(DB_X64_INSTRUCTION_XOR_R64_R64)[0] == 'x');
+    CHECK(db_x64_instruction_kind_name(DB_X64_INSTRUCTION_MOV_R32_IMM32)[0] == 'm');
     CHECK(db_x64_instruction_kind_name((db_x64_instruction_kind)99)[0] == 'u');
     return 1;
 }

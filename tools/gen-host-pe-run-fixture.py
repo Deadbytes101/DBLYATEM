@@ -34,7 +34,7 @@ def idata_off(rva):
 
 
 def build(kind):
-    assert kind in ("exit0", "exit42", "loop")
+    assert kind in ("exit0", "exit42", "exit42ecx", "exit42ecxclear", "loop")
     data = bytearray(FILE_SIZE)
     data[:2] = b"MZ"
     u32(data, 0x3C, PE)
@@ -72,10 +72,15 @@ def build(kind):
     if kind == "loop":
         code = bytes.fromhex("e9fbffffff")
     else:
-        argument = (
-            bytes.fromhex("31c9") if kind == "exit0"
-            else bytes.fromhex("48b9") + (42).to_bytes(8, "little")
-        )
+        if kind == "exit0":
+            argument = bytes.fromhex("31c9")
+        elif kind == "exit42ecx":
+            argument = bytes.fromhex("b92a000000")
+        elif kind == "exit42ecxclear":
+            argument = (bytes.fromhex("48b9") + b"\xff" * 8 +
+                        bytes.fromhex("b92a000000"))
+        else:
+            argument = bytes.fromhex("48b9") + (42).to_bytes(8, "little")
         call_end_rva = TEXT_RVA + len(argument) + 6
         displacement = IAT_RVA - call_end_rva
         code = (argument + bytes.fromhex("ff15") +
@@ -96,8 +101,13 @@ def build(kind):
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in ("exit0", "exit42", "loop"):
-        raise SystemExit("usage: gen-host-pe-run-fixture.py {exit0|exit42|loop} OUT.exe")
+    if len(sys.argv) != 3 or sys.argv[1] not in (
+        "exit0", "exit42", "exit42ecx", "exit42ecxclear", "loop"
+    ):
+        raise SystemExit(
+            "usage: gen-host-pe-run-fixture.py "
+            "{exit0|exit42|exit42ecx|exit42ecxclear|loop} OUT.exe"
+        )
     Path(sys.argv[2]).write_bytes(build(sys.argv[1]))
 
 

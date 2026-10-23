@@ -195,6 +195,7 @@ static db_x64_block_control db_x64_block_classify_scalar(
 
     case DB_X64_INSTRUCTION_NOP:
     case DB_X64_INSTRUCTION_MOV_R64_IMM64:
+    case DB_X64_INSTRUCTION_MOV_R32_IMM32:
     case DB_X64_INSTRUCTION_MOV_R64_R64:
     case DB_X64_INSTRUCTION_XOR_R32_R32:
     case DB_X64_INSTRUCTION_XOR_R64_R64:
