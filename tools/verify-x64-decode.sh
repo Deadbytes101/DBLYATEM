@@ -16,11 +16,24 @@ clang $common tests/sub_rsp_imm8_decode_test.c src/x64_decode.c \
     -o "$build/sub-rsp-clang"
 "$build/sub-rsp-clang"
 
+# The native ARM64 entry owner references wrappers defined by the actual
+# assembly translation entry. Link those wrappers rather than weakening tests.
+flags_asm=
+case "$(uname -m)" in
+    aarch64|arm64)
+        gcc -c src/linux_arm64_translation_entry_aarch64.S \
+            -o "$build/sub-rsp-native-helpers.o"
+        flags_asm="$build/sub-rsp-native-helpers.o"
+        ;;
+esac
+
 for compiler in gcc clang; do
+    # shellcheck disable=SC2086
     "$compiler" -Iinclude -Isrc -std=c11 -O2 -Wall -Wextra -Wpedantic \
         -Werror -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
         tests/sub_rsp_imm8_flags_test.c src/linux_arm64_translation_entry.c \
-        src/translated_terminal_exit.c -o "$build/sub-rsp-flags-$compiler"
+        src/translated_terminal_exit.c $flags_asm \
+        -o "$build/sub-rsp-flags-$compiler"
     "$build/sub-rsp-flags-$compiler"
 done
 
