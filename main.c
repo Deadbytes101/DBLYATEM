@@ -1,12 +1,12 @@
 #define _POSIX_C_SOURCE 200809L
 
+#include "dblyat/host_pe_input.h"
+#include "dblyat/host_pe_run.h"
 #include "dblyat/pe.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdint.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
+#include <string.h>
 #include <unistd.h>
 
 static size_t db_cstr_length(const char *text)
@@ -78,39 +78,38 @@ static void db_put_u32_dec(int fd, uint32_t value)
 
 static int db_verify_file(const char *path)
 {
-    struct stat metadata;
+    db_host_pe_input input;
+    db_host_pe_input_status input_status;
+    db_host_pe_input_status close_status;
     db_pe_image image;
     db_pe_status status;
-    void *mapping;
-    int fd;
 
-    fd = open(path, O_RDONLY | O_CLOEXEC);
-    if (fd < 0) {
-        db_puts_fd(STDERR_FILENO, "DblyatEM: open failed\n");
+    db_host_pe_input_init(&input);
+    input_status = db_host_pe_input_open(path, SIZE_MAX, &input);
+    if (input_status != DB_HOST_PE_INPUT_OK) {
+        switch (input_status) {
+        case DB_HOST_PE_INPUT_OPEN_FAILED:
+            db_puts_fd(STDERR_FILENO, "DblyatEM: open failed\n");
+            break;
+        case DB_HOST_PE_INPUT_TOO_LARGE:
+            db_puts_fd(STDERR_FILENO, "DblyatEM: input is too large\n");
+            break;
+        case DB_HOST_PE_INPUT_MAP_FAILED:
+            db_puts_fd(STDERR_FILENO, "DblyatEM: mmap failed\n");
+            break;
+        default:
+            db_puts_fd(STDERR_FILENO, "DblyatEM: invalid input size\n");
+            break;
+        }
         return 2;
     }
 
-    if (fstat(fd, &metadata) != 0 || metadata.st_size <= 0) {
-        db_puts_fd(STDERR_FILENO, "DblyatEM: invalid input size\n");
-        (void)close(fd);
+    status = db_pe_verify(input.data, input.size, &image);
+    close_status = db_host_pe_input_close(&input);
+    if (close_status != DB_HOST_PE_INPUT_OK) {
+        db_puts_fd(STDERR_FILENO, "DblyatEM: munmap failed\n");
         return 2;
     }
-
-    if ((uintmax_t)metadata.st_size > (uintmax_t)SIZE_MAX) {
-        db_puts_fd(STDERR_FILENO, "DblyatEM: input is too large\n");
-        (void)close(fd);
-        return 2;
-    }
-
-    mapping = mmap(NULL, (size_t)metadata.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    (void)close(fd);
-    if (mapping == MAP_FAILED) {
-        db_puts_fd(STDERR_FILENO, "DblyatEM: mmap failed\n");
-        return 2;
-    }
-
-    status = db_pe_verify(mapping, (size_t)metadata.st_size, &image);
-    (void)munmap(mapping, (size_t)metadata.st_size);
 
     if (status != DB_PE_OK) {
         db_puts_fd(STDERR_FILENO, "PE VERIFY: FAIL: ");
@@ -135,6 +134,9 @@ static int db_verify_file(const char *path)
 
 int main(int argc, char **argv)
 {
+    if (argc == 3 && strcmp(argv[1], "run") == 0) {
+        return db_host_pe_run_file(argv[2]);
+    }
     if (argc != 3 || argv[1][0] != 'v' || argv[1][1] != 'e' ||
         argv[1][2] != 'r' || argv[1][3] != 'i' || argv[1][4] != 'f' ||
         argv[1][5] != 'y' || argv[1][6] != '\0') {

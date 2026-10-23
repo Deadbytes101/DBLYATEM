@@ -1,0 +1,133 @@
+version: 2.1
+
+# Issue #153 native acceptance. A CircleCI Arm VM is not QEMU on x86.
+jobs:
+  issue153-native-arm64:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: arm.medium
+    steps:
+      - checkout
+
+      - run:
+          name: Prove exact commit and native Arm64 host
+          command: |
+            set -euo pipefail
+            mkdir -p native-arm64-evidence
+            git rev-parse HEAD | tee native-arm64-evidence/HEAD.txt
+            test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
+            uname -a | tee native-arm64-evidence/uname.txt
+            lscpu | tee native-arm64-evidence/lscpu.txt
+            getconf PAGESIZE | tee native-arm64-evidence/page-size.txt
+            test "$(uname -s)" = Linux
+            test "$(uname -m)" = aarch64
+
+      - run:
+          name: Install native build prerequisites
+          command: |
+            set -euo pipefail
+            sudo apt-get update
+            sudo apt-get install --yes gcc clang make python3 binutils gdb strace
+
+      - run:
+          name: Native AArch64 PE64 acceptance
+          command: |
+            set -euo pipefail
+            sh tools/smoke-host-pe-run-aarch64-native.sh | tee native-arm64-evidence/native-smoke.log
+            find build/host-pe-run-aarch64-native -maxdepth 1 -name '*.log' -exec cp '{}' native-arm64-evidence/ \;
+          no_output_timeout: 10m
+
+      - run:
+          name: Diagnose native GCC Clang and translated demand status
+          when: on_fail
+          command: |
+            set -u
+            mkdir -p native-arm64-evidence
+            if test -f build/host-pe-run-aarch64-native/exit0.exe; then
+              set +e
+              make -s -f GNUmakefile BUILD=build/host-pe-run-aarch64-native-clang HOST_MACHINE=aarch64 CC=clang build/host-pe-run-aarch64-native-clang/dblyatem > native-arm64-evidence/clang-build.log 2>&1
+              clang_build_status=$?
+              echo "CLANG_BUILD_STATUS=$clang_build_status"
+              if test "$clang_build_status" -eq 0; then
+                timeout 20s build/host-pe-run-aarch64-native-clang/dblyatem run build/host-pe-run-aarch64-native/exit0.exe > native-arm64-evidence/clang-exit0.log 2>&1
+                echo "CLANG_EXIT0_STATUS=$?"
+                cat native-arm64-evidence/clang-exit0.log
+                for fixture in exit42 loop; do
+                  timeout 20s build/host-pe-run-aarch64-native-clang/dblyatem run build/host-pe-run-aarch64-native/$fixture.exe > native-arm64-evidence/clang-$fixture.log 2>&1
+                  echo "CLANG_$fixture=$?"
+                  cat native-arm64-evidence/clang-$fixture.log
+                done
+              fi
+              for mode in O0 O1 O2-noalias; do
+                case "$mode" in
+                  O0) optimization="-O0" ;;
+                  O1) optimization="-O1" ;;
+                  O2-noalias) optimization="-O2 -fno-strict-aliasing" ;;
+                esac
+                flags="-std=c11 $optimization -g -Wall -Wextra -Wpedantic -Werror -Wshadow -Wstrict-prototypes -Wmissing-prototypes"
+                make -s -f GNUmakefile BUILD=build/host-pe-run-gcc-$mode HOST_MACHINE=aarch64 CC=gcc CFLAGS="$flags" build/host-pe-run-gcc-$mode/dblyatem > native-arm64-evidence/gcc-$mode-build.log 2>&1
+                compile_status=$?
+                echo "GCC_$mode-BUILD_STATUS=$compile_status"
+                if test "$compile_status" -eq 0; then
+                  timeout 20s build/host-pe-run-gcc-$mode/dblyatem run build/host-pe-run-aarch64-native/exit0.exe > native-arm64-evidence/gcc-$mode-exit0.log 2>&1
+                  echo "GCC_$mode-EXIT0_STATUS=$?"
+                  cat native-arm64-evidence/gcc-$mode-exit0.log
+                else
+                  tail -n 12 native-arm64-evidence/gcc-$mode-build.log
+                fi
+              done
+              timeout 25s gdb -q --batch -ex 'set pagination off' -ex 'break db_win32_translated_demand_run' -ex 'run run build/host-pe-run-aarch64-native/exit0.exe' -ex finish -ex 'info registers x0' --args build/host-pe-run-aarch64-native/dblyatem > native-arm64-evidence/gdb-demand.log 2>&1
+              echo "GDB_STATUS=$?"
+              tail -n 25 native-arm64-evidence/gdb-demand.log
+              timeout 20s strace -f -e trace=mmap,mprotect,munmap -o native-arm64-evidence/strace-mapping.log build/host-pe-run-aarch64-native/dblyatem run build/host-pe-run-aarch64-native/exit0.exe > native-arm64-evidence/strace-exit0.log 2>&1
+              echo "STRACE_EXIT0_STATUS=$?"
+              tail -n 20 native-arm64-evidence/strace-mapping.log
+              set -e
+            fi
+          no_output_timeout: 5m
+
+      - run:
+          name: Focused and full exact-head regression
+          command: |
+            set -euo pipefail
+            sh tools/verify-host-pe-run.sh | tee native-arm64-evidence/host-focused.log
+            sh tools/verify-all.sh --contract > native-arm64-evidence/contract.log 2>&1
+            timeout 25m sh tools/verify-all.sh --run | tee native-arm64-evidence/verify-all.log
+          no_output_timeout: 28m
+
+      - run:
+          name: Freeze checksum-pinned runtime and regression evidence
+          when: always
+          command: |
+            set -euo pipefail
+            mkdir -p native-arm64-evidence
+            if test -d build/host-pe-run-aarch64-native; then
+              find build/host-pe-run-aarch64-native -maxdepth 1 -name '*.log' -exec cp '{}' native-arm64-evidence/ \;
+            fi
+            if test -f build/verify-all/manifest.txt; then
+              cp build/verify-all/manifest.txt native-arm64-evidence/verify-all-manifest.txt
+            fi
+            if test -d build/verify-all/logs; then
+              mkdir -p native-arm64-evidence/verify-all-logs
+              cp build/verify-all/logs/*.log native-arm64-evidence/verify-all-logs/
+            fi
+            git rev-parse HEAD > native-arm64-evidence/HEAD.txt
+            git show -s --format=%T HEAD > native-arm64-evidence/TREE.txt
+            uname -a > native-arm64-evidence/uname.txt
+            getconf PAGESIZE > native-arm64-evidence/page-size.txt
+            (cd native-arm64-evidence && find . -type f \( -name '*.txt' -o -name '*.log' \) -print0 | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
+
+      - store_artifacts:
+          path: native-arm64-evidence
+          destination: issue153-native-arm64
+
+workflows:
+  issue153-feature-branch:
+    jobs:
+      - issue153-native-arm64:
+          filters:
+            branches:
+              only:
+                - deadbyte/issue153-run-cli-v1
+                - deadbyte/issue155-mov-r32-imm32-v1
+                - deadbyte/identical-x64-workload-v1

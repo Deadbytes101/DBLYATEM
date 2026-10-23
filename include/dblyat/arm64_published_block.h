@@ -3,11 +3,13 @@
 
 #include "dblyat/arm64_code_image.h"
 #include "dblyat/linux_arm64_wx_provider.h"
+#include "dblyat/translated_terminal_exit.h"
+#include "dblyat/x64_arm64_plan.h"
 #include "dblyat/x64_block.h"
 
 #include <stdint.h>
 
-#define DB_ARM64_PUBLISHED_BLOCK_FORMAT_VERSION UINT32_C(1)
+#define DB_ARM64_PUBLISHED_BLOCK_FORMAT_VERSION UINT32_C(2)
 
 typedef enum db_arm64_published_block_status {
     DB_ARM64_PUBLISHED_BLOCK_OK = 0,
@@ -17,7 +19,9 @@ typedef enum db_arm64_published_block_status {
     DB_ARM64_PUBLISHED_BLOCK_BAD_BLOCK,
     DB_ARM64_PUBLISHED_BLOCK_BAD_IMAGE_PLAN,
     DB_ARM64_PUBLISHED_BLOCK_BAD_HANDLE,
-    DB_ARM64_PUBLISHED_BLOCK_BAD_AUDIT
+    DB_ARM64_PUBLISHED_BLOCK_BAD_AUDIT,
+    DB_ARM64_PUBLISHED_BLOCK_BAD_TERMINAL_PLAN,
+    DB_ARM64_PUBLISHED_BLOCK_TERMINAL_ALREADY_BOUND
 } db_arm64_published_block_status;
 
 typedef struct db_arm64_published_block {
@@ -35,6 +39,7 @@ typedef struct db_arm64_published_block {
     uint32_t guest_instruction_count;
     uint32_t arm64_word_count;
     uint32_t block_stop_reason;
+    db_translated_terminal_exit terminal_exit;
     uint32_t format_version;
     uint8_t reserved[12];
 } db_arm64_published_block;
@@ -46,6 +51,10 @@ db_arm64_published_block_status db_arm64_published_block_build(
     const db_linux_arm64_wx_audit *audit,
     uint64_t source_generation,
     uint64_t translation_key,
+    db_arm64_published_block *published);
+
+db_arm64_published_block_status db_arm64_published_block_bind_terminal(
+    const db_x64_arm64_plan_record *terminal_plan,
     db_arm64_published_block *published);
 
 const char *db_arm64_published_block_status_name(

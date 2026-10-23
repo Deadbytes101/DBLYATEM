@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define DB_ARM64_BLOCK_CACHE_FORMAT_VERSION UINT32_C(1)
+#define DB_ARM64_BLOCK_CACHE_FORMAT_VERSION UINT32_C(2)
 
 typedef enum db_arm64_block_cache_slot_state {
     DB_ARM64_BLOCK_CACHE_SLOT_EMPTY = 0,

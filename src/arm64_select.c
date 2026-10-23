@@ -162,6 +162,7 @@ const char *db_arm64_select_opcode_name(db_arm64_select_opcode opcode)
         "update logic flags",
         "form guest address",
         "load u64",
+        "load u64 target",
         "store u64",
         "push guest u64",
         "pop guest u64",

@@ -195,10 +195,27 @@ static db_x64_block_control db_x64_block_classify_scalar(
 
     case DB_X64_INSTRUCTION_NOP:
     case DB_X64_INSTRUCTION_MOV_R64_IMM64:
+    case DB_X64_INSTRUCTION_MOV_R32_IMM32:
     case DB_X64_INSTRUCTION_MOV_R64_R64:
     case DB_X64_INSTRUCTION_XOR_R32_R32:
     case DB_X64_INSTRUCTION_XOR_R64_R64:
         return DB_X64_BLOCK_CONTROL_LINEAR;
+    }
+
+    return DB_X64_BLOCK_CONTROL_TRAP;
+}
+
+static db_x64_block_control db_x64_block_classify_memory(
+    const db_x64_memory_instruction *instruction)
+{
+    switch (instruction->kind) {
+    case DB_X64_MEMORY_INSTRUCTION_LOAD_R64:
+    case DB_X64_MEMORY_INSTRUCTION_STORE_R64:
+        return DB_X64_BLOCK_CONTROL_LINEAR;
+    case DB_X64_MEMORY_INSTRUCTION_CALL_RM64:
+        return DB_X64_BLOCK_CONTROL_INDIRECT_CALL;
+    case DB_X64_MEMORY_INSTRUCTION_JMP_RM64:
+        return DB_X64_BLOCK_CONTROL_INDIRECT_JUMP;
     }
 
     return DB_X64_BLOCK_CONTROL_TRAP;
@@ -342,7 +359,7 @@ db_x64_block_status db_x64_block_build(
             }
 
             record.path = DB_X64_BLOCK_PATH_MEMORY;
-            record.control = DB_X64_BLOCK_CONTROL_LINEAR;
+            record.control = db_x64_block_classify_memory(&memory);
             record.memory = memory;
             has_direct_target = false;
             instruction_length = memory.instruction_length;
@@ -459,6 +476,8 @@ const char *db_x64_block_control_name(
         "direct call",
         "direct jump",
         "conditional jump",
+        "indirect call",
+        "indirect jump",
         "trap"
     };
 

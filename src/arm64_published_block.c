@@ -199,6 +199,58 @@ static bool audit_valid(const db_arm64_code_image_plan *plan,
            zero_bytes(audit->reserved, sizeof(audit->reserved));
 }
 
+static bool published_binding_base_valid(
+    const db_arm64_published_block *published)
+{
+    uint64_t expected_end;
+
+    return published->format_version ==
+               DB_ARM64_PUBLISHED_BLOCK_FORMAT_VERSION &&
+           published->guest_source_rip != 0u &&
+           x64_address_is_canonical(published->guest_source_rip) &&
+           published->guest_byte_count != 0u &&
+           published->guest_instruction_count != 0u &&
+           published->block_stop_reason ==
+               (uint32_t)DB_X64_BLOCK_STOP_TERMINATOR &&
+           add_u64(published->guest_source_rip,
+                   (uint64_t)published->guest_byte_count,
+                   &expected_end) &&
+           expected_end == published->guest_end_rip &&
+           x64_address_is_canonical(published->guest_end_rip) &&
+           (published->guest_fallthrough_rip == 0u ||
+            x64_address_is_canonical(
+                published->guest_fallthrough_rip)) &&
+           zero_bytes(&published->terminal_exit,
+                      sizeof(published->terminal_exit)) &&
+           zero_bytes(published->reserved,
+                      sizeof(published->reserved));
+}
+
+static bool terminal_plan_common_valid(
+    const db_x64_arm64_plan_record *terminal_plan,
+    const db_arm64_published_block *published)
+{
+    return terminal_plan->opcode == DB_X64_ARM64_PLAN_TAIL_HELPER &&
+           terminal_plan->terminal == 1u &&
+           terminal_plan->source_rip >= published->guest_source_rip &&
+           terminal_plan->source_rip < published->guest_end_rip &&
+           x64_address_is_canonical(terminal_plan->source_rip) &&
+           terminal_plan->displacement == 0 &&
+           terminal_plan->guest_state_offset == 0u &&
+           terminal_plan->width == DB_IR_WIDTH_NONE &&
+           terminal_plan->address_mode == DB_IR_ADDRESS_NONE &&
+           terminal_plan->immediate16 == 0u &&
+           terminal_plan->shift == 0u &&
+           terminal_plan->host_destination == DB_X64_ARM64_HOST_NONE &&
+           terminal_plan->host_auxiliary == DB_X64_ARM64_HOST_NONE &&
+           terminal_plan->guest_register == DB_X64_ARM64_GUEST_NONE &&
+           terminal_plan->base_guest_register == DB_X64_ARM64_GUEST_NONE &&
+           terminal_plan->index_guest_register == DB_X64_ARM64_GUEST_NONE &&
+           terminal_plan->scale == 1u &&
+           zero_bytes(terminal_plan->reserved,
+                      sizeof(terminal_plan->reserved));
+}
+
 db_arm64_published_block_status db_arm64_published_block_build(
     const db_x64_block_summary *block,
     const db_arm64_code_image_plan *plan,
@@ -268,6 +320,105 @@ db_arm64_published_block_status db_arm64_published_block_build(
     return DB_ARM64_PUBLISHED_BLOCK_OK;
 }
 
+db_arm64_published_block_status db_arm64_published_block_bind_terminal(
+    const db_x64_arm64_plan_record *terminal_plan,
+    db_arm64_published_block *published)
+{
+    db_arm64_published_block completed;
+    db_translated_terminal_exit exit_record;
+    db_translated_terminal_exit_status exit_status;
+
+    if (terminal_plan == NULL || published == NULL) {
+        return DB_ARM64_PUBLISHED_BLOCK_NULL_ARGUMENT;
+    }
+
+    if (regions_overlap(terminal_plan, sizeof(*terminal_plan),
+                        published, sizeof(*published))) {
+        return DB_ARM64_PUBLISHED_BLOCK_BUFFER_OVERLAP;
+    }
+
+    if (!zero_bytes(&published->terminal_exit,
+                    sizeof(published->terminal_exit))) {
+        return DB_ARM64_PUBLISHED_BLOCK_TERMINAL_ALREADY_BOUND;
+    }
+
+    if (!published_binding_base_valid(published) ||
+        !terminal_plan_common_valid(terminal_plan, published)) {
+        return DB_ARM64_PUBLISHED_BLOCK_BAD_TERMINAL_PLAN;
+    }
+
+    switch (terminal_plan->helper) {
+    case DB_X64_ARM64_HELPER_DISPATCH_DIRECT:
+        if (terminal_plan->host_source != DB_X64_ARM64_HOST_NONE ||
+            terminal_plan->condition !=
+                (db_ir_condition)DB_IR_CONDITION_NONE ||
+            terminal_plan->trap != DB_IR_TRAP_NONE) {
+            return DB_ARM64_PUBLISHED_BLOCK_BAD_TERMINAL_PLAN;
+        }
+        exit_status = db_translated_terminal_exit_plan_direct(
+            terminal_plan->source_rip,
+            terminal_plan->value,
+            &exit_record);
+        break;
+
+    case DB_X64_ARM64_HELPER_DISPATCH_TARGET:
+        if (terminal_plan->host_source != DB_X64_ARM64_HOST_TARGET ||
+            terminal_plan->value != 0u ||
+            terminal_plan->condition !=
+                (db_ir_condition)DB_IR_CONDITION_NONE ||
+            terminal_plan->trap != DB_IR_TRAP_NONE) {
+            return DB_ARM64_PUBLISHED_BLOCK_BAD_TERMINAL_PLAN;
+        }
+        exit_status = db_translated_terminal_exit_plan_target(
+            terminal_plan->source_rip,
+            &exit_record);
+        break;
+
+    case DB_X64_ARM64_HELPER_DISPATCH_CONDITIONAL:
+        if (terminal_plan->host_source != DB_X64_ARM64_HOST_TARGET ||
+            terminal_plan->condition < DB_IR_CONDITION_OVERFLOW ||
+            terminal_plan->condition > DB_IR_CONDITION_GREATER ||
+            terminal_plan->trap != DB_IR_TRAP_NONE ||
+            published->guest_fallthrough_rip == 0u) {
+            return DB_ARM64_PUBLISHED_BLOCK_BAD_TERMINAL_PLAN;
+        }
+        exit_status = db_translated_terminal_exit_plan_conditional(
+            terminal_plan->source_rip,
+            terminal_plan->value,
+            published->guest_fallthrough_rip,
+            (uint32_t)terminal_plan->condition,
+            &exit_record);
+        break;
+
+    case DB_X64_ARM64_HELPER_RAISE_TRAP:
+        if (terminal_plan->host_source != DB_X64_ARM64_HOST_NONE ||
+            terminal_plan->value != 0u ||
+            terminal_plan->condition !=
+                (db_ir_condition)DB_IR_CONDITION_NONE ||
+            terminal_plan->trap <= DB_IR_TRAP_NONE ||
+            terminal_plan->trap > DB_IR_TRAP_SYSCALL) {
+            return DB_ARM64_PUBLISHED_BLOCK_BAD_TERMINAL_PLAN;
+        }
+        exit_status = db_translated_terminal_exit_plan_trap(
+            terminal_plan->source_rip,
+            (uint32_t)terminal_plan->trap,
+            &exit_record);
+        break;
+
+    default:
+        return DB_ARM64_PUBLISHED_BLOCK_BAD_TERMINAL_PLAN;
+    }
+
+    if (exit_status != DB_TRANSLATED_TERMINAL_EXIT_OK) {
+        return DB_ARM64_PUBLISHED_BLOCK_BAD_TERMINAL_PLAN;
+    }
+
+    completed = *published;
+    completed.terminal_exit = exit_record;
+    *published = completed;
+    return DB_ARM64_PUBLISHED_BLOCK_OK;
+}
+
 const char *db_arm64_published_block_status_name(
     db_arm64_published_block_status status)
 {
@@ -279,7 +430,9 @@ const char *db_arm64_published_block_status_name(
         "bad x86-64 block summary",
         "bad ARM64 code image plan",
         "bad W^X publication handle",
-        "bad W^X publication audit"
+        "bad W^X publication audit",
+        "bad translated terminal plan",
+        "translated terminal exit already bound"
     };
 
     if ((size_t)status >= sizeof(names) / sizeof(names[0])) {

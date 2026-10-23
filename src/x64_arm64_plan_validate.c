@@ -105,6 +105,21 @@ static bool address_valid(const db_arm64_select_record *record)
            record->scale == UINT8_C(1);
 }
 
+static bool target_load_valid(const db_arm64_select_record *record)
+{
+    return record->value == 0u && record->displacement == 0 &&
+           record->width == DB_IR_WIDTH_64 &&
+           record->condition == (db_ir_condition)DB_IR_CONDITION_NONE &&
+           record->trap == DB_IR_TRAP_NONE &&
+           record->address_mode == DB_IR_ADDRESS_NONE &&
+           record->destination_register == DB_IR_REGISTER_NONE &&
+           record->source_register == DB_IR_REGISTER_NONE &&
+           record->base_register == DB_IR_REGISTER_NONE &&
+           record->index_register == DB_IR_REGISTER_NONE &&
+           record->scale == UINT8_C(1) &&
+           record->temp == DB_ARM64_SELECT_TEMP_ADDRESS;
+}
+
 bool db_x64_arm64_plan_selection_valid_internal(
     const db_arm64_select_record *record)
 {
@@ -184,6 +199,8 @@ bool db_x64_arm64_plan_selection_valid_internal(
                record->source_register == DB_IR_REGISTER_NONE &&
                record->address_mode == DB_IR_ADDRESS_NONE &&
                record->temp == DB_ARM64_SELECT_TEMP_ADDRESS;
+    case DB_ARM64_SELECT_LOAD_U64_TARGET:
+        return target_load_valid(record);
     case DB_ARM64_SELECT_STORE_U64:
         return record->value == 0u && record->displacement == 0 &&
                record->width == DB_IR_WIDTH_64 &&

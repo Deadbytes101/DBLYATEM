@@ -35,8 +35,8 @@ static db_x64_arm64_plan_record rec(uint64_t rip, uint32_t ix, db_x64_arm64_plan
     return p;
 }
 static int known_words(void) {
-    db_x64_arm64_plan_record p[11];
-    uint32_t w[11];
+    db_x64_arm64_plan_record p[13];
+    uint32_t w[13];
     db_x64_arm64_relocation r[2];
     db_x64_arm64_encode_summary s;
     p[0] = rec(0x1000, 0, DB_X64_ARM64_PLAN_NOP);
@@ -75,15 +75,21 @@ static int known_words(void) {
     p[8].host_destination = 16;
     p[8].host_source = 16;
     p[8].host_auxiliary = 17;
-    p[9] = rec(0x1009, 6, DB_X64_ARM64_PLAN_CALL_HELPER);
-    p[9].helper = DB_X64_ARM64_HELPER_UPDATE_LOGIC_FLAGS;
-    p[9].width = DB_IR_WIDTH_64;
-    p[9].guest_register = 3;
-    p[10] = rec(0x100a, 7, DB_X64_ARM64_PLAN_TAIL_HELPER);
-    p[10].helper = DB_X64_ARM64_HELPER_DISPATCH_DIRECT;
-    p[10].value = 0x2000;
-    p[10].terminal = 1;
-    CHECK(db_x64_arm64_encode_block(p, 11, w, 11, r, 2, &s) == DB_X64_ARM64_ENCODE_OK);
+    p[9] = rec(0x1009, 6, DB_X64_ARM64_PLAN_MOVZ_U16);
+    p[9].immediate16 = UINT16_C(64);
+    p[9].host_destination = DB_X64_ARM64_HELPER_ARG0;
+    p[10] = rec(0x1009, 6, DB_X64_ARM64_PLAN_MOVZ_U16);
+    p[10].immediate16 = UINT16_C(3);
+    p[10].host_destination = DB_X64_ARM64_HELPER_ARG1;
+    p[11] = rec(0x1009, 6, DB_X64_ARM64_PLAN_CALL_HELPER);
+    p[11].helper = DB_X64_ARM64_HELPER_UPDATE_LOGIC_FLAGS;
+    p[11].width = DB_IR_WIDTH_64;
+    p[11].guest_register = 3;
+    p[12] = rec(0x100a, 7, DB_X64_ARM64_PLAN_TAIL_HELPER);
+    p[12].helper = DB_X64_ARM64_HELPER_DISPATCH_DIRECT;
+    p[12].value = 0x2000;
+    p[12].terminal = 1;
+    CHECK(db_x64_arm64_encode_block(p, 13, w, 13, r, 2, &s) == DB_X64_ARM64_ENCODE_OK);
     CHECK(w[0] == UINT32_C(0xd503201f));
     CHECK(w[1] == UINT32_C(0xf9400a70));
     CHECK(w[2] == UINT32_C(0xf9000e71));
@@ -93,11 +99,42 @@ static int known_words(void) {
     CHECK(w[6] == UINT32_C(0xf2e22450));
     CHECK(w[7] == UINT32_C(0xca110210));
     CHECK(w[8] == UINT32_C(0x4a110210));
-    CHECK(w[9] == UINT32_C(0x94000000));
-    CHECK(w[10] == UINT32_C(0x14000000));
-    CHECK(s.word_count == 11 && s.relocation_count == 2 && s.has_terminal == 1);
-    CHECK(r[0].word_index == 9 && r[0].kind == DB_X64_ARM64_RELOCATION_CALL26 && r[0].helper == DB_X64_ARM64_HELPER_UPDATE_LOGIC_FLAGS && r[0].guest_register == 3);
-    CHECK(r[1].word_index == 10 && r[1].kind == DB_X64_ARM64_RELOCATION_JUMP26 && r[1].helper == DB_X64_ARM64_HELPER_DISPATCH_DIRECT && r[1].value == 0x2000);
+    CHECK(w[9] == UINT32_C(0xd2800800));
+    CHECK(w[10] == UINT32_C(0xd2800061));
+    CHECK(w[11] == UINT32_C(0x94000000));
+    CHECK(w[12] == UINT32_C(0x14000000));
+    CHECK(s.word_count == 13 && s.relocation_count == 2 && s.has_terminal == 1);
+    CHECK(r[0].word_index == 11 && r[0].kind == DB_X64_ARM64_RELOCATION_CALL26 && r[0].helper == DB_X64_ARM64_HELPER_UPDATE_LOGIC_FLAGS && r[0].guest_register == 3);
+    CHECK(r[1].word_index == 12 && r[1].kind == DB_X64_ARM64_RELOCATION_JUMP26 && r[1].helper == DB_X64_ARM64_HELPER_DISPATCH_DIRECT && r[1].value == 0x2000);
+    return 1;
+}
+static int stale_helper_abi_is_transactional(void) {
+    db_x64_arm64_plan_record p[3];
+    uint32_t w[4], wb[4];
+    db_x64_arm64_relocation r[2], rb[2];
+    db_x64_arm64_encode_summary s, sb;
+    size_t i;
+    p[0] = rec(0x2100, 0, DB_X64_ARM64_PLAN_MOVZ_U16);
+    p[0].immediate16 = UINT16_C(64);
+    p[0].host_destination = DB_X64_ARM64_HELPER_ARG0;
+    p[1] = rec(0x2100, 0, DB_X64_ARM64_PLAN_MOVZ_U16);
+    p[1].immediate16 = UINT16_C(4);
+    p[1].host_destination = DB_X64_ARM64_HELPER_ARG1;
+    p[2] = rec(0x2100, 0, DB_X64_ARM64_PLAN_CALL_HELPER);
+    p[2].helper = DB_X64_ARM64_HELPER_UPDATE_LOGIC_FLAGS;
+    p[2].width = DB_IR_WIDTH_64;
+    p[2].guest_register = 3;
+    fill(w, sizeof(w), 0xa5);
+    fill(r, sizeof(r), 0x5a);
+    fill(&s, sizeof(s), 0x3c);
+    for (i = 0; i < 4; ++i) wb[i] = w[i];
+    for (i = 0; i < 2; ++i) rb[i] = r[i];
+    sb = s;
+    CHECK(db_x64_arm64_encode_block(p, 3, w, 4, r, 2, &s) ==
+          DB_X64_ARM64_ENCODE_BAD_HELPER_ABI);
+    CHECK(same(w, wb, sizeof(w)) && same(r, rb, sizeof(r)) && same(&s, &sb, sizeof(s)));
+    p[1].immediate16 = UINT16_C(3);
+    CHECK(db_x64_arm64_encode_block(p, 3, w, 4, r, 2, &s) == DB_X64_ARM64_ENCODE_OK);
     return 1;
 }
 static int failures(void) {
@@ -140,10 +177,12 @@ int main(void) {
     db_x64_arm64_relocation r[1];
     db_x64_arm64_encode_summary s;
     CHECK(known_words());
+    CHECK(stale_helper_abi_is_transactional());
     CHECK(failures());
     CHECK(db_x64_arm64_encode_block(NULL, 1, w, 1, r, 1, &s) == DB_X64_ARM64_ENCODE_NULL_ARGUMENT);
     CHECK(db_x64_arm64_encode_block(&p, 0, w, 1, r, 1, &s) == DB_X64_ARM64_ENCODE_BAD_COUNT);
     CHECK(db_x64_arm64_encode_status_name(DB_X64_ARM64_ENCODE_OK)[0] == 'o');
+    CHECK(db_x64_arm64_encode_status_name(DB_X64_ARM64_ENCODE_BAD_HELPER_ABI)[0] == 'b');
     (void) write(STDOUT_FILENO, "X64 ARM64 ENCODE TEST: PASS\n", sizeof("X64 ARM64 ENCODE TEST: PASS\n") - 1u);
     return 0;
 }

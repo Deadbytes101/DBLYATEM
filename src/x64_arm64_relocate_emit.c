@@ -77,6 +77,7 @@ uint32_t db_x64_arm64_relocate_materialize_count_internal(
     return count == 0u ? 1u : count;
 }
 
+/* Use x9 for far thunks. x16/x17 carry live guest-address/data operands. */
 uint32_t db_x64_arm64_relocate_emit_materialize_internal(
     uint64_t value,
     uint32_t *words)
@@ -102,12 +103,12 @@ uint32_t db_x64_arm64_relocate_emit_materialize_internal(
             base |
             (index << 21u) |
             ((uint32_t)chunk << 5u) |
-            UINT32_C(16);
+            UINT32_C(9);
         started = true;
     }
 
     if (!started) {
-        words[cursor++] = UINT32_C(0xd2800010);
+        words[cursor++] = UINT32_C(0xd2800009);
     }
     return cursor;
 }

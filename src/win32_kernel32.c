@@ -53,6 +53,7 @@ static bool db_win32_kernel32_handler_known(uint32_t handler_id,
         return true;
 
     case DB_WIN32_HANDLER_KERNEL32_SET_LAST_ERROR:
+    case DB_WIN32_HANDLER_KERNEL32_EXIT_PROCESS:
         *expected_arguments = 1u;
         return true;
 
@@ -129,6 +130,13 @@ db_win32_kernel32_status db_win32_kernel32_execute(
             return DB_WIN32_KERNEL32_ARGUMENT_OUT_OF_RANGE;
         }
         planned_state.last_error = (uint32_t)arguments[0];
+        break;
+
+    case DB_WIN32_HANDLER_KERNEL32_EXIT_PROCESS:
+        if (arguments[0] > UINT32_MAX) {
+            return DB_WIN32_KERNEL32_ARGUMENT_OUT_OF_RANGE;
+        }
+        planned_result.raw_result = (uint32_t)arguments[0];
         break;
 
     default:

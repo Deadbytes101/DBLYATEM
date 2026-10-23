@@ -22,7 +22,9 @@ typedef enum db_x64_memory_instruction_status {
 
 typedef enum db_x64_memory_instruction_kind {
     DB_X64_MEMORY_INSTRUCTION_LOAD_R64 = 0,
-    DB_X64_MEMORY_INSTRUCTION_STORE_R64
+    DB_X64_MEMORY_INSTRUCTION_STORE_R64,
+    DB_X64_MEMORY_INSTRUCTION_CALL_RM64,
+    DB_X64_MEMORY_INSTRUCTION_JMP_RM64
 } db_x64_memory_instruction_kind;
 
 typedef struct db_x64_memory_instruction {

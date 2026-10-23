@@ -42,6 +42,17 @@ static void db_arm64_select_copy_address(
     record->temp = DB_ARM64_SELECT_TEMP_ADDRESS;
 }
 
+static db_arm64_select_record db_arm64_select_form_address(
+    const db_ir_instruction *instruction,
+    uint32_t source_ir_index)
+{
+    db_arm64_select_record record = db_arm64_select_initial(
+        instruction, source_ir_index, DB_ARM64_SELECT_FORM_GUEST_ADDRESS);
+
+    db_arm64_select_copy_address(&record, instruction);
+    return record;
+}
+
 void db_arm64_select_emit_instruction_internal(
     const db_ir_instruction *instruction,
     uint32_t source_ir_index,
@@ -49,6 +60,8 @@ void db_arm64_select_emit_instruction_internal(
 {
     db_arm64_select_record first;
     db_arm64_select_record second;
+    db_arm64_select_record third;
+    db_arm64_select_record fourth;
 
     switch (instruction->opcode) {
     case DB_IR_OPCODE_NOP:
@@ -94,10 +107,7 @@ void db_arm64_select_emit_instruction_internal(
 
     case DB_IR_OPCODE_LOAD_U64:
     case DB_IR_OPCODE_STORE_U64:
-        first = db_arm64_select_initial(
-            instruction, source_ir_index,
-            DB_ARM64_SELECT_FORM_GUEST_ADDRESS);
-        db_arm64_select_copy_address(&first, instruction);
+        first = db_arm64_select_form_address(instruction, source_ir_index);
         second = db_arm64_select_initial(
             instruction, source_ir_index,
             instruction->opcode == DB_IR_OPCODE_LOAD_U64
@@ -106,8 +116,7 @@ void db_arm64_select_emit_instruction_internal(
         second.width = DB_IR_WIDTH_64;
         second.temp = DB_ARM64_SELECT_TEMP_ADDRESS;
         if (instruction->opcode == DB_IR_OPCODE_LOAD_U64) {
-            second.destination_register =
-                instruction->destination_register;
+            second.destination_register = instruction->destination_register;
         } else {
             second.source_register = instruction->source_register;
         }
@@ -126,6 +135,27 @@ void db_arm64_select_emit_instruction_internal(
         second.value = instruction->direct_target;
         records[0] = first;
         records[1] = second;
+        return;
+
+    case DB_IR_OPCODE_CALL_INDIRECT:
+        first = db_arm64_select_form_address(instruction, source_ir_index);
+        second = db_arm64_select_initial(
+            instruction, source_ir_index,
+            DB_ARM64_SELECT_LOAD_U64_TARGET);
+        second.width = DB_IR_WIDTH_64;
+        second.temp = DB_ARM64_SELECT_TEMP_ADDRESS;
+        third = db_arm64_select_initial(
+            instruction, source_ir_index,
+            DB_ARM64_SELECT_PUSH_GUEST_U64);
+        third.value = instruction->fallthrough_rip;
+        fourth = db_arm64_select_initial(
+            instruction, source_ir_index,
+            DB_ARM64_SELECT_BRANCH_GUEST_TARGET);
+        fourth.temp = DB_ARM64_SELECT_TEMP_TARGET;
+        records[0] = first;
+        records[1] = second;
+        records[2] = third;
+        records[3] = fourth;
         return;
 
     case DB_IR_OPCODE_RETURN:
@@ -147,6 +177,22 @@ void db_arm64_select_emit_instruction_internal(
             DB_ARM64_SELECT_BRANCH_GUEST_DIRECT);
         first.value = instruction->direct_target;
         records[0] = first;
+        return;
+
+    case DB_IR_OPCODE_JUMP_INDIRECT:
+        first = db_arm64_select_form_address(instruction, source_ir_index);
+        second = db_arm64_select_initial(
+            instruction, source_ir_index,
+            DB_ARM64_SELECT_LOAD_U64_TARGET);
+        second.width = DB_IR_WIDTH_64;
+        second.temp = DB_ARM64_SELECT_TEMP_ADDRESS;
+        third = db_arm64_select_initial(
+            instruction, source_ir_index,
+            DB_ARM64_SELECT_BRANCH_GUEST_TARGET);
+        third.temp = DB_ARM64_SELECT_TEMP_TARGET;
+        records[0] = first;
+        records[1] = second;
+        records[2] = third;
         return;
 
     case DB_IR_OPCODE_JUMP_CONDITIONAL:
