@@ -298,7 +298,6 @@ static int test_validation_and_targets(void)
     db_linux_arm64_translation_context context;
     db_linux_arm64_translation_context before;
     db_x64_arm64_helper_targets targets;
-    db_x64_arm64_helper_targets targets_before;
 
     CHECK(init_fixture(&f));
     CHECK(db_linux_arm64_translation_context_init(&context) ==
@@ -314,7 +313,6 @@ static int test_validation_and_targets(void)
     CHECK(same(&context, &before, sizeof(context)));
 
     memset(&targets, 0xa5, sizeof(targets));
-    targets_before = targets;
 #if defined(__aarch64__)
     CHECK(db_linux_arm64_guest_runtime_helper_targets(&targets) ==
           DB_LINUX_ARM64_GUEST_RUNTIME_OK);
@@ -322,6 +320,7 @@ static int test_validation_and_targets(void)
     CHECK(targets.addresses[DB_X64_ARM64_HELPER_FORM_GUEST_ADDRESS] != 0u);
     CHECK(targets.addresses[DB_X64_ARM64_HELPER_RAISE_TRAP] != 0u);
 #else
+    db_x64_arm64_helper_targets targets_before = targets;
     CHECK(db_linux_arm64_guest_runtime_helper_targets(&targets) ==
           DB_LINUX_ARM64_GUEST_RUNTIME_UNSUPPORTED_HOST);
     CHECK(same(&targets, &targets_before, sizeof(targets)));
