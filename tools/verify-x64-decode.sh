@@ -9,6 +9,21 @@ rm -rf "$build"
 mkdir -p "$build"
 cd "$root"
 
+gcc $common tests/sub_rsp_imm8_decode_test.c src/x64_decode.c \
+    -o "$build/sub-rsp-gcc"
+"$build/sub-rsp-gcc"
+clang $common tests/sub_rsp_imm8_decode_test.c src/x64_decode.c \
+    -o "$build/sub-rsp-clang"
+"$build/sub-rsp-clang"
+
+for compiler in gcc clang; do
+    "$compiler" -Iinclude -Isrc -std=c11 -O2 -Wall -Wextra -Wpedantic \
+        -Werror -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+        tests/sub_rsp_imm8_flags_test.c src/linux_arm64_translation_entry.c \
+        src/translated_terminal_exit.c -o "$build/sub-rsp-flags-$compiler"
+    "$build/sub-rsp-flags-$compiler"
+done
+
 gcc $common tests/x64_decode_test.c src/x64_decode.c \
     -o "$build/gcc-decode-test"
 "$build/gcc-decode-test"

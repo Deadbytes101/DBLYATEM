@@ -170,7 +170,8 @@ const char *db_arm64_select_opcode_name(db_arm64_select_opcode opcode)
         "branch guest target",
         "test guest condition",
         "branch if true",
-        "raise trap"
+        "raise trap",
+        "sub guest imm8"
     };
 
     if ((size_t)opcode >= sizeof(names) / sizeof(names[0])) {

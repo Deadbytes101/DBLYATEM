@@ -149,6 +149,18 @@ void db_x64_arm64_plan_emit_internal(
             selection->destination_register, DB_X64_ARM64_HOST_PRIMARY);
         return;
 
+    case DB_ARM64_SELECT_SUB_GUEST_IMM8:
+        cursor = materialize(selection, source_select_index,
+                             selection->value, DB_X64_ARM64_HELPER_ARG0,
+                             records);
+        cursor += materialize(selection, source_select_index,
+                              (uint64_t)selection->destination_register,
+                              DB_X64_ARM64_HELPER_ARG1, &records[cursor]);
+        records[cursor] = helper_record(
+            selection, source_select_index,
+            DB_X64_ARM64_HELPER_SUB_GUEST_IMM8, false);
+        return;
+
     case DB_ARM64_SELECT_UPDATE_LOGIC_FLAGS:
         cursor = materialize(selection,
                              source_select_index,

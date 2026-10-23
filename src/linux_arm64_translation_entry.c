@@ -27,6 +27,7 @@ extern void db_linux_arm64_helper_write_guest_u64(void);
 extern void db_linux_arm64_helper_push_guest_u64(void);
 extern void db_linux_arm64_helper_pop_guest_u64(void);
 extern void db_linux_arm64_helper_update_logic_flags(void);
+extern void db_linux_arm64_helper_sub_guest_imm8(void);
 extern void db_linux_arm64_helper_test_guest_condition(void);
 #endif
 
@@ -802,6 +803,41 @@ void db_linux_arm64_helper_update_logic_flags_core(
     state->rflags = flags | DB_X64_RFLAGS_FIXED_ONE;
 }
 
+void db_linux_arm64_helper_sub_guest_imm8_core(
+    db_x64_scalar_state *state,
+    db_linux_arm64_translation_context *context,
+    uint64_t immediate,
+    uint64_t guest_register)
+{
+    uint64_t before;
+    uint64_t after;
+    uint64_t flags;
+
+    if (context_faulted(context)) return;
+    if (state == NULL || guest_register != DB_GUEST_RSP_INDEX ||
+        (uint64_t)(int64_t)(int8_t)immediate != immediate) {
+        set_fault(context, DB_LINUX_ARM64_HELPER_FAULT_BAD_OPERAND,
+                  0u, DB_LINUX_ARM64_GUEST_ACCESS_NONE);
+        return;
+    }
+
+    before = state->registers[DB_GUEST_RSP_INDEX];
+    after = before - immediate;
+    flags = state->rflags & ~DB_GUEST_ARITH_FLAGS;
+    if (before < immediate) flags |= DB_X64_RFLAGS_CF;
+    if (parity_even((uint8_t)after)) flags |= DB_X64_RFLAGS_PF;
+    if (((before ^ immediate ^ after) & UINT64_C(0x10)) != 0u)
+        flags |= DB_X64_RFLAGS_AF;
+    if (after == 0u) flags |= DB_X64_RFLAGS_ZF;
+    if ((after & UINT64_C(0x8000000000000000)) != 0u)
+        flags |= DB_X64_RFLAGS_SF;
+    if (((before ^ immediate) & (before ^ after) &
+         UINT64_C(0x8000000000000000)) != 0u)
+        flags |= DB_X64_RFLAGS_OF;
+    state->registers[DB_GUEST_RSP_INDEX] = after;
+    state->rflags = flags | DB_X64_RFLAGS_FIXED_ONE;
+}
+
 uint64_t db_linux_arm64_helper_test_guest_condition_core(
     db_x64_scalar_state *state,
     db_linux_arm64_translation_context *context,
@@ -902,6 +938,8 @@ db_linux_arm64_guest_runtime_status
     completed.addresses[DB_X64_ARM64_HELPER_RAISE_TRAP] =
         db_linux_arm64_translation_terminal_helper_address(
             DB_TRANSLATED_TERMINAL_EXIT_TRAP);
+    completed.addresses[DB_X64_ARM64_HELPER_SUB_GUEST_IMM8] =
+        function_address(db_linux_arm64_helper_sub_guest_imm8);
 
     for (index = 1u; index < DB_X64_ARM64_HELPER_TARGET_COUNT; ++index) {
         if (completed.addresses[index] == 0u ||

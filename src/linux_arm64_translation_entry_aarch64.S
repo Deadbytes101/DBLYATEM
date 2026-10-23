@@ -199,6 +199,21 @@ db_linux_arm64_helper_update_logic_flags:
 .size db_linux_arm64_helper_update_logic_flags, .-db_linux_arm64_helper_update_logic_flags
 
 .align 2
+.global db_linux_arm64_helper_sub_guest_imm8
+.type db_linux_arm64_helper_sub_guest_imm8, %function
+db_linux_arm64_helper_sub_guest_imm8:
+    db_helper_prologue
+    mov x9, x0
+    mov x10, x1
+    mov x0, x19
+    mov x1, x20
+    mov x2, x9
+    mov x3, x10
+    bl db_linux_arm64_helper_sub_guest_imm8_core
+    db_helper_epilogue
+.size db_linux_arm64_helper_sub_guest_imm8, .-db_linux_arm64_helper_sub_guest_imm8
+
+.align 2
 .global db_linux_arm64_helper_test_guest_condition
 .type db_linux_arm64_helper_test_guest_condition, %function
 db_linux_arm64_helper_test_guest_condition:

@@ -98,7 +98,8 @@ static bool db_arm64_select_common_valid(const db_ir_instruction *instruction)
            db_arm64_select_condition_valid(instruction->condition) &&
            db_arm64_select_trap_valid(instruction->trap) &&
            (instruction->flag_effect == DB_IR_FLAG_EFFECT_NONE ||
-            instruction->flag_effect == DB_IR_FLAG_EFFECT_LOGIC_RESULT) &&
+            instruction->flag_effect == DB_IR_FLAG_EFFECT_LOGIC_RESULT ||
+            instruction->flag_effect == DB_IR_FLAG_EFFECT_SUB_RESULT) &&
            db_arm64_select_register_or_none(
                instruction->destination_register) &&
            db_arm64_select_register_or_none(instruction->source_register) &&
@@ -184,6 +185,19 @@ bool db_arm64_select_ir_valid_internal(const db_ir_instruction *instruction)
                db_arm64_select_no_address(instruction) &&
                db_arm64_select_no_target(instruction) &&
                db_arm64_select_no_condition_trap_flags(instruction);
+
+    case DB_IR_OPCODE_SUB_IMMEDIATE:
+        return instruction->width == DB_IR_WIDTH_64 &&
+               instruction->destination_register == UINT8_C(4) &&
+               instruction->source_register == DB_IR_REGISTER_NONE &&
+               (uint64_t)(int64_t)(int8_t)instruction->immediate ==
+                   instruction->immediate &&
+               db_arm64_select_no_address(instruction) &&
+               db_arm64_select_no_target(instruction) &&
+               instruction->condition ==
+                   (db_ir_condition)DB_IR_CONDITION_NONE &&
+               instruction->trap == DB_IR_TRAP_NONE &&
+               instruction->flag_effect == DB_IR_FLAG_EFFECT_SUB_RESULT;
 
     case DB_IR_OPCODE_XOR:
         return (instruction->width == DB_IR_WIDTH_32 ||
@@ -293,6 +307,7 @@ uint32_t db_arm64_select_expansion_internal(db_ir_opcode opcode)
         return UINT32_C(2);
 
     case DB_IR_OPCODE_NOP:
+    case DB_IR_OPCODE_SUB_IMMEDIATE:
     case DB_IR_OPCODE_MOVE_IMMEDIATE:
     case DB_IR_OPCODE_MOVE_REGISTER:
     case DB_IR_OPCODE_JUMP_DIRECT:

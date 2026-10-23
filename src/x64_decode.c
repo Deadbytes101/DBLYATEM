@@ -217,6 +217,25 @@ static db_x64_decode_status db_x64_decode_register(
         return DB_X64_DECODE_OK;
     }
 
+    if (opcode == UINT8_C(0x83)) {
+        if (available_size - opcode_index < 3u) {
+            return DB_X64_DECODE_TRUNCATED;
+        }
+        if (rex != UINT8_C(0x48)) {
+            return DB_X64_DECODE_INVALID_ENCODING;
+        }
+        if (bytes[opcode_index + 1u] != UINT8_C(0xec)) {
+            return (bytes[opcode_index + 1u] & UINT8_C(0xc0)) != UINT8_C(0xc0)
+                       ? DB_X64_DECODE_UNSUPPORTED_ADDRESSING
+                       : DB_X64_DECODE_INVALID_ENCODING;
+        }
+        planned->kind = DB_X64_INSTRUCTION_SUB_RSP_IMM8;
+        planned->destination_register = UINT8_C(4);
+        planned->immediate = (uint64_t)(int64_t)(int8_t)bytes[opcode_index + 2u];
+        planned->length = UINT8_C(4);
+        return DB_X64_DECODE_OK;
+    }
+
     if (opcode != UINT8_C(0x89) &&
         opcode != UINT8_C(0x8b) &&
         opcode != UINT8_C(0x31)) {
@@ -320,7 +339,8 @@ db_x64_decode_status db_x64_decode_one(
     } else if ((opcode >= UINT8_C(0xb8) && opcode <= UINT8_C(0xbf)) ||
                opcode == UINT8_C(0x89) ||
                opcode == UINT8_C(0x8b) ||
-               opcode == UINT8_C(0x31)) {
+               opcode == UINT8_C(0x31) ||
+               opcode == UINT8_C(0x83)) {
         status = db_x64_decode_register(bytes,
                                         available_size,
                                         opcode_index,
@@ -386,7 +406,8 @@ const char *db_x64_instruction_kind_name(db_x64_instruction_kind kind)
         "mov r64, r64",
         "xor r32, r32",
         "xor r64, r64",
-        "mov r32, imm32"
+        "mov r32, imm32",
+        "sub rsp, imm8"
     };
 
     if ((size_t)kind >= sizeof(names) / sizeof(names[0])) {

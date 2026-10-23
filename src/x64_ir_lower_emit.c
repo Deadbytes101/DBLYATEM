@@ -142,6 +142,14 @@ db_x64_ir_lower_status db_x64_ir_lower_emit_record_internal(
         instruction->source_register = record->scalar.source_register;
         return DB_X64_IR_LOWER_OK;
 
+    case DB_X64_INSTRUCTION_SUB_RSP_IMM8:
+        instruction->opcode = DB_IR_OPCODE_SUB_IMMEDIATE;
+        instruction->width = DB_IR_WIDTH_64;
+        instruction->destination_register = UINT8_C(4);
+        instruction->immediate = record->scalar.immediate;
+        instruction->flag_effect = DB_IR_FLAG_EFFECT_SUB_RESULT;
+        return DB_X64_IR_LOWER_OK;
+
     case DB_X64_INSTRUCTION_XOR_R32_R32:
     case DB_X64_INSTRUCTION_XOR_R64_R64:
         instruction->opcode = DB_IR_OPCODE_XOR;

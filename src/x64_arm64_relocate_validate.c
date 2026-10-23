@@ -101,7 +101,7 @@ bool db_x64_arm64_relocate_record_valid_internal(
            (relocation->kind == DB_X64_ARM64_RELOCATION_CALL26 ||
             relocation->kind == DB_X64_ARM64_RELOCATION_JUMP26) &&
            relocation->helper > DB_X64_ARM64_HELPER_NONE &&
-           relocation->helper <= DB_X64_ARM64_HELPER_RAISE_TRAP &&
+           relocation->helper <= DB_X64_ARM64_HELPER_SUB_GUEST_IMM8 &&
            width_valid(relocation->width) &&
            condition_valid(relocation->condition) &&
            trap_valid(relocation->trap) &&

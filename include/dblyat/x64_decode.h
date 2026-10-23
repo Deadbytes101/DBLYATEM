@@ -35,7 +35,8 @@ typedef enum db_x64_instruction_kind {
     DB_X64_INSTRUCTION_MOV_R64_R64,
     DB_X64_INSTRUCTION_XOR_R32_R32,
     DB_X64_INSTRUCTION_XOR_R64_R64,
-    DB_X64_INSTRUCTION_MOV_R32_IMM32
+    DB_X64_INSTRUCTION_MOV_R32_IMM32,
+    DB_X64_INSTRUCTION_SUB_RSP_IMM8
 } db_x64_instruction_kind;
 
 typedef struct db_x64_instruction {

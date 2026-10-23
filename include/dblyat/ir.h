@@ -19,7 +19,8 @@ typedef enum db_ir_opcode {
     DB_IR_OPCODE_JUMP_DIRECT,
     DB_IR_OPCODE_JUMP_INDIRECT,
     DB_IR_OPCODE_JUMP_CONDITIONAL,
-    DB_IR_OPCODE_TRAP
+    DB_IR_OPCODE_TRAP,
+    DB_IR_OPCODE_SUB_IMMEDIATE
 } db_ir_opcode;
 
 typedef enum db_ir_width {
@@ -63,7 +64,8 @@ typedef enum db_ir_address_mode {
 
 typedef enum db_ir_flag_effect {
     DB_IR_FLAG_EFFECT_NONE = 0,
-    DB_IR_FLAG_EFFECT_LOGIC_RESULT
+    DB_IR_FLAG_EFFECT_LOGIC_RESULT,
+    DB_IR_FLAG_EFFECT_SUB_RESULT
 } db_ir_flag_effect;
 
 typedef struct db_ir_address {

@@ -89,6 +89,16 @@ void db_arm64_select_emit_instruction_internal(
         records[0] = first;
         return;
 
+    case DB_IR_OPCODE_SUB_IMMEDIATE:
+        first = db_arm64_select_initial(
+            instruction, source_ir_index,
+            DB_ARM64_SELECT_SUB_GUEST_IMM8);
+        first.value = instruction->immediate;
+        first.width = DB_IR_WIDTH_64;
+        first.destination_register = UINT8_C(4);
+        records[0] = first;
+        return;
+
     case DB_IR_OPCODE_XOR:
         first = db_arm64_select_initial(
             instruction, source_ir_index,
