@@ -13,11 +13,15 @@ do
     test -f "$name"
 done
 
+# The planner fixture uses only db_host_pe_run_plan. The AArch64 native
+# CLI entry point has additional session dependencies, so discard its
+# unreferenced section rather than spoofing the host architecture.
 for compiler in gcc clang
 do
     # shellcheck disable=SC2086
-    "$compiler" $common tests/host_pe_run_plan_test.c \
-        src/host_pe_run.c -o "$build/$compiler-test"
+    "$compiler" $common -ffunction-sections -fdata-sections \
+        tests/host_pe_run_plan_test.c src/host_pe_run.c \
+        -Wl,--gc-sections -o "$build/$compiler-test"
     "$build/$compiler-test" > "$build/$compiler.log"
     grep -Fqx 'HOST PE RUN PLAN CHECK: PASS' "$build/$compiler.log"
     grep -Fqx 'HOST PE RUN PLAN GUEST RANGES: PASS' "$build/$compiler.log"
@@ -28,8 +32,9 @@ gcc -Iinclude -D_POSIX_C_SOURCE=200809L -std=c11 -O1 -g \
     -Wall -Wextra -Wpedantic -Werror -Wshadow \
     -Wstrict-prototypes -Wmissing-prototypes \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
+    -ffunction-sections -fdata-sections \
     tests/host_pe_run_plan_test.c src/host_pe_run.c \
-    -o "$build/sanitize-test"
+    -Wl,--gc-sections -o "$build/sanitize-test"
 ASAN_OPTIONS=detect_leaks=1 "$build/sanitize-test" > "$build/sanitize.log"
 grep -Fqx 'HOST PE RUN PLAN CHECK: PASS' "$build/sanitize.log"
 
