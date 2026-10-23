@@ -69,7 +69,7 @@ db_host_pe_run_plan_status db_host_pe_run_plan(
     return DB_HOST_PE_RUN_PLAN_OK;
 }
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) && !defined(DB_HOST_PE_RUN_PLAN_ONLY)
 
 enum {
     HOST_CACHE_SLOTS = 32,
@@ -367,7 +367,7 @@ static int host_execute(host_run_owned *owned)
 
 int db_host_pe_run_file(const char *path)
 {
-#if !defined(__aarch64__)
+#if !defined(__aarch64__) || defined(DB_HOST_PE_RUN_PLAN_ONLY)
     (void)path;
     (void)fprintf(stderr,
                   "DblyatEM run: native AArch64 Linux host required\n");
