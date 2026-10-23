@@ -1,0 +1,78 @@
+version: 2.1
+
+# Issue #153 native acceptance. A CircleCI Arm VM is not QEMU on x86.
+jobs:
+  issue153-native-arm64:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: arm.medium
+    steps:
+      - checkout
+
+      - run:
+          name: Prove exact commit and native Arm64 host
+          command: |
+            set -euo pipefail
+            mkdir -p native-arm64-evidence
+            git rev-parse HEAD | tee native-arm64-evidence/HEAD.txt
+            test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
+            uname -a | tee native-arm64-evidence/uname.txt
+            lscpu | tee native-arm64-evidence/lscpu.txt
+            getconf PAGESIZE | tee native-arm64-evidence/page-size.txt
+            test "$(uname -s)" = Linux
+            test "$(uname -m)" = aarch64
+
+      - run:
+          name: Install native build prerequisites
+          command: |
+            set -euo pipefail
+            sudo apt-get update
+            sudo apt-get install --yes gcc clang make python3 binutils
+
+      - run:
+          name: Native AArch64 PE64 acceptance
+          command: |
+            set -euo pipefail
+            sh tools/smoke-host-pe-run-aarch64-native.sh | tee native-arm64-evidence/native-smoke.log
+            find build/host-pe-run-aarch64-native -maxdepth 1 -name '*.log' -exec cp '{}' native-arm64-evidence/ \;
+          no_output_timeout: 10m
+
+      - run:
+          name: Focused and full exact-head regression
+          command: |
+            set -euo pipefail
+            sh tools/verify-host-pe-run.sh | tee native-arm64-evidence/host-focused.log
+            sh tools/verify-all.sh --contract > native-arm64-evidence/contract.log 2>&1
+            timeout 25m sh tools/verify-all.sh --run | tee native-arm64-evidence/verify-all.log
+          no_output_timeout: 28m
+
+      - run:
+          name: Freeze checksum-pinned runtime and regression evidence
+          when: always
+          command: |
+            set -euo pipefail
+            mkdir -p native-arm64-evidence
+            if test -d build/host-pe-run-aarch64-native; then
+              find build/host-pe-run-aarch64-native -maxdepth 1 -name '*.log' -exec cp '{}' native-arm64-evidence/ \;
+            fi
+            if test -f build/verify-all/manifest.txt; then
+              cp build/verify-all/manifest.txt native-arm64-evidence/verify-all-manifest.txt
+            fi
+            git rev-parse HEAD > native-arm64-evidence/HEAD.txt
+            git show -s --format=%T HEAD > native-arm64-evidence/TREE.txt
+            uname -a > native-arm64-evidence/uname.txt
+            getconf PAGESIZE > native-arm64-evidence/page-size.txt
+            (cd native-arm64-evidence && find . -maxdepth 1 -type f \( -name '*.txt' -o -name '*.log' \) -print0 | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
+
+      - store_artifacts:
+          path: native-arm64-evidence
+          destination: issue153-native-arm64
+
+workflows:
+  issue153-feature-branch:
+    jobs:
+      - issue153-native-arm64:
+          filters:
+            branches:
+              only:
+                - deadbyte/issue153-run-cli-v1
