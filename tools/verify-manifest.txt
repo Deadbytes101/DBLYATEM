@@ -24,3 +24,4 @@ STANDALONE=tools/verify-arm64-translation-benchmark-flags.sh
 STANDALONE=tools/verify-linux-arm64-translation-entry.sh
 STANDALONE=tools/verify-arm64-host-address-contract.sh
 STANDALONE=tools/verify-android-device-manifest.sh
+STANDALONE=tools/verify-windows-x64-workload.sh

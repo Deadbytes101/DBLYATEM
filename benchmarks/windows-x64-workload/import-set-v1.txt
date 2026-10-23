@@ -1,0 +1,3 @@
+KERNEL32.dll!ExitProcess
+KERNEL32.dll!GetLastError
+KERNEL32.dll!SetLastError

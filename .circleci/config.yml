@@ -130,3 +130,4 @@ workflows:
               only:
                 - deadbyte/issue153-run-cli-v1
                 - deadbyte/issue155-mov-r32-imm32-v1
+                - deadbyte/identical-x64-workload-v1
