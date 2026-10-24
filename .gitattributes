@@ -1,6 +1,7 @@
 # Keep POSIX entry points executable by WSL even when the repository is checked
 # out by Git for Windows with core.autocrlf enabled.
 *.sh text eol=lf
+*.ps1 linguist-vendored
 
 # The deterministic Windows x64 workload hashes repository text bytes directly.
 # Keep its generators, manifests, fixtures, and canonical hex byte-stable across
